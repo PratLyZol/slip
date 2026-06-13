@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * App providers. The Dynamic provider is REAL but conditionally mounted:
- * only when NEXT_PUBLIC_DYNAMIC_ENV_ID is present. With no env id we're in demo
- * mode and render children directly — the provider must never crash the demo.
+ * App providers. The Dynamic provider is REAL and mounted whenever
+ * NEXT_PUBLIC_DYNAMIC_ENV_ID is present — independent of the demo flag — so the
+ * header's wallet-connect works even while the engine adapters still run in demo
+ * mode (they branch on isDemoMode() themselves). With no env id we render
+ * children directly so the credential-free demo never crashes.
  *
  * Dynamic config per docs/research/dynamic.md §1–2: client component,
  * environmentId + EthereumWalletConnectors, Arc testnet via overrides.evmNetworks.
@@ -15,11 +17,11 @@ import {
 } from "@dynamic-labs/sdk-react-core";
 import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
 import { arcDynamicNetwork } from "@/lib/adapters/arc";
-import { DYNAMIC_ENV_ID, isDemoMode } from "@/lib/config";
+import { DYNAMIC_ENV_ID } from "@/lib/config";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // Demo mode (or no env id): skip the real provider entirely.
-  if (isDemoMode() || !DYNAMIC_ENV_ID) {
+  // No env id: no real wallet backend to talk to — skip the provider entirely.
+  if (!DYNAMIC_ENV_ID) {
     return <>{children}</>;
   }
 

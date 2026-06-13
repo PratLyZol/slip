@@ -7,8 +7,19 @@
  */
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import WalletPill from "./WalletPill";
+
+// The Dynamic SDK isn't SSR-safe (touches window at eval). Load the wallet
+// control client-only so it's never part of the static prerender.
+const WalletConnect = dynamic(() => import("./WalletConnect"), {
+  ssr: false,
+  loading: () => (
+    <span className="rounded-full bg-ink-700 px-4 py-1.5 text-[13px] font-semibold text-text-faint">
+      Wallet
+    </span>
+  ),
+});
 
 const NAV = [
   { href: "/", label: "Send", icon: SendIcon },
@@ -27,7 +38,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <Link href="/" className="flex items-center gap-2">
           <Wordmark />
         </Link>
-        <WalletPill />
+        <WalletConnect />
       </header>
 
       <main className="flex flex-1 flex-col px-5 pb-32 pt-4">{children}</main>

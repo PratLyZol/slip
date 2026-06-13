@@ -22,7 +22,6 @@
  * send falls back to per-recipient direct settle so it NEVER blocks.
  */
 
-import { DEMO_SENDER } from "../config";
 import { formatUsd } from "../format";
 import { getShieldOps } from "../adapters/unlink";
 import { aggregate, bridgeToArc } from "./aggregate";
@@ -154,12 +153,20 @@ export async function runBatchSend(
     );
   }
 
-  // Bridge Σ onto Arc ONCE (mint to the sender's Arc address, where the funds
-  // land before the shield). Real mode = a live CCTP burn+mint; on failure it
+  // Bridge Σ onto Arc ONCE (mint to the connected sender's Arc address, where
+  // the funds land before the shield). A live CCTP burn+mint; on failure it
   // throws honestly (no silent fallback) and the send aborts at this step.
+  if (!req.senderAddress) {
+    emit({
+      step: EngineStep.Aggregate,
+      status: "failed",
+      detail: "Connect a wallet to receive the aggregated USDC on Arc",
+    });
+    throw new Error("No sender wallet connected — connect a wallet before sending.");
+  }
   const bridge = await bridgeToArc({
     amountUsdc: totalUsdc,
-    recipientAddress: DEMO_SENDER.address,
+    recipientAddress: req.senderAddress,
   });
   emit({
     step: EngineStep.Aggregate,

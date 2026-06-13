@@ -42,6 +42,7 @@ export default function SendScreen() {
   const amountNum = Number(amount);
   const canSend =
     phase === "idle" &&
+    Boolean(wallet.address) &&
     recipient.trim().length > 0 &&
     amountNum > 0 &&
     Number.isFinite(amountNum);
@@ -62,6 +63,7 @@ export default function SendScreen() {
             { identifier: recipient.trim(), amountUsd: amountNum, region },
           ],
           senderName: wallet.name,
+          senderAddress: wallet.address,
         },
         onStep,
       );

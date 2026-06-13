@@ -1,15 +1,13 @@
 "use client";
 
 /**
- * WalletProvider exposes a unified {@link WalletState} via context so the UI
- * never branches on demo vs real itself.
+ * WalletProvider exposes a unified {@link WalletState} via context. Real-only:
+ * the connected Dynamic wallet (no demo identity).
  *
- * - Demo mode: a static demo identity + fixed balance (no Dynamic hooks).
- * - Real mode: an inner component that reads Dynamic hooks (only valid inside
- *   <Providers> which mounts DynamicContextProvider) and live USDC balance.
- *
- * Because React hooks can't be called conditionally, we select the
- * implementation at the component boundary, not mid-render.
+ * Dynamic hooks are only valid inside <Providers> (mounted when
+ * NEXT_PUBLIC_DYNAMIC_ENV_ID is present). When the env id is absent we render a
+ * disconnected provider that calls NO Dynamic hooks — so the app never crashes,
+ * it just has no wallet until you set the env id and connect.
  */
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -19,8 +17,9 @@ import {
   useIsLoggedIn,
   useUserWallets,
 } from "@dynamic-labs/sdk-react-core";
-import { DEMO_SENDER, DEMO_USDC_BALANCE, isDemoMode } from "@/lib/config";
+import { DYNAMIC_ENV_ID } from "@/lib/config";
 import { getUsdcBalance } from "@/lib/adapters/balance";
+import { shortAddress } from "@/lib/format";
 import type { WalletState } from "@/lib/wallet/types";
 
 const WalletContext = createContext<WalletState | null>(null);
@@ -38,19 +37,24 @@ export default function WalletProvider({
 }: {
   children: React.ReactNode;
 }) {
-  if (isDemoMode()) {
-    return <DemoWalletProvider>{children}</DemoWalletProvider>;
+  // No Dynamic env id → no provider mounted → render a hook-free disconnected
+  // state instead of crashing on Dynamic hooks.
+  if (!DYNAMIC_ENV_ID) {
+    return <DisconnectedWalletProvider>{children}</DisconnectedWalletProvider>;
   }
-  return <RealWalletProvider>{children}</RealWalletProvider>;
+  return <DynamicWalletProvider>{children}</DynamicWalletProvider>;
 }
 
-function DemoWalletProvider({ children }: { children: React.ReactNode }) {
+function DisconnectedWalletProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const value: WalletState = {
-    demo: true,
-    loggedIn: true,
-    name: DEMO_SENDER.name,
-    address: DEMO_SENDER.address,
-    balanceUsdc: DEMO_USDC_BALANCE,
+    loggedIn: false,
+    name: "",
+    address: undefined,
+    balanceUsdc: null,
     login: () => {},
     logout: () => {},
   };
@@ -59,8 +63,8 @@ function DemoWalletProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RealWalletProvider({ children }: { children: React.ReactNode }) {
-  const { user, setShowAuthFlow, handleLogOut } = useDynamicContext();
+function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
+  const { setShowAuthFlow, handleLogOut } = useDynamicContext();
   const isLoggedIn = useIsLoggedIn();
   const wallets = useUserWallets();
   const address = wallets[0]?.address as Address | undefined;
@@ -82,9 +86,8 @@ function RealWalletProvider({ children }: { children: React.ReactNode }) {
   }, [address]);
 
   const value: WalletState = {
-    demo: false,
-    loggedIn: Boolean(isLoggedIn),
-    name: user?.email ?? user?.username ?? "Sender",
+    loggedIn: Boolean(isLoggedIn && address),
+    name: address ? shortAddress(address) : "",
     address,
     balanceUsdc,
     login: () => setShowAuthFlow(true),
