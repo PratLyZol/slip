@@ -65,11 +65,16 @@ export const DYNAMIC_API_TOKEN = process.env.DYNAMIC_API_TOKEN;
 export const CCTP_PRIVATE_KEY = process.env.CCTP_PRIVATE_KEY;
 
 /**
- * Circle StableFX API key (server-only — NEVER bundled to the client). Format
- * `PREFIX:ID:SECRET`. Contact-a-rep (sales@circle.com), so it may be absent;
- * when missing the primary FX path falls back to Swap Kit, then to the sim.
+ * Circle StableFX API key (server-only — NEVER bundled to the client). Drives
+ * the real USDC→EURC conversion at claim time via Circle StableFX on Arc.
+ * Contact-a-rep (sales@circle.com), so it may be absent; when missing the FX
+ * path falls back to Swap Kit, then to the deterministic sim.
  */
-export const STABLEFX_API_KEY = process.env.STABLEFX_API_KEY;
+export const CIRCLE_STABLEFX_API_KEY = process.env.CIRCLE_STABLEFX_API_KEY;
+
+/** StableFX REST base URL (override for sandbox vs prod). */
+export const CIRCLE_STABLEFX_API_BASE =
+  process.env.CIRCLE_STABLEFX_API_BASE ?? "https://api.circle.com";
 
 /**
  * Circle Kit key (server-only — NEVER bundled to the client). Powers the Swap
@@ -104,7 +109,7 @@ export function isBridgeConfigured(): boolean {
  * StableFX key is present. When false, FX cascades to Swap Kit then the sim.
  */
 export function isStableFxConfigured(): boolean {
-  return !isDemoMode() && !!STABLEFX_API_KEY;
+  return !isDemoMode() && !!CIRCLE_STABLEFX_API_KEY;
 }
 
 /**

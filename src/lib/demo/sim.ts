@@ -32,10 +32,22 @@ export function fakeTxHash(...parts: string[]): Hex {
 
 /** Build a labeled simulated TxRef pointing at the real explorer host. */
 export function simTx(...parts: string[]): TxRef {
+  return simTxOn(txUrl, ...parts);
+}
+
+/**
+ * Like {@link simTx} but lets the caller pick the explorer host. Used by
+ * cross-chain steps (e.g. the CCTP burn lives on Base Sepolia, not Arc) so the
+ * simulated tx links to the correct explorer.
+ */
+export function simTxOn(
+  explorerFor: (hash: Hex) => string,
+  ...parts: string[]
+): TxRef {
   const hash = fakeTxHash(...parts);
   if (process.env.NODE_ENV !== "production") {
     // Loud in dev so we never mistake a simulation for a real settlement.
     console.warn(`[slip:demo] simulated tx ${hash} (${parts.join("|")})`);
   }
-  return { hash, explorerUrl: txUrl(hash), simulated: true };
+  return { hash, explorerUrl: explorerFor(hash), simulated: true };
 }

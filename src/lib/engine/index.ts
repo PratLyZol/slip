@@ -7,8 +7,9 @@
  * progress UI and the architecture reveal read correctly from day one.
  */
 
+import { DEMO_SENDER } from "../config";
 import { formatUsd } from "../format";
-import { aggregate } from "./aggregate";
+import { aggregate, bridgeToArc } from "./aggregate";
 import { buildClaimUrl } from "./claimLink";
 import {
   deriveCounterfactual,
@@ -77,7 +78,11 @@ export async function runSend(
     detail: `${recipient.identifier} → ${shortAddr(resolved.address)}${resolveSuffix}`,
   });
 
-  // Step 2 — Aggregate (honest pass-through; verifies USDC balance).
+  // Step 2 — Aggregate. Two parts: (a) verify the sender holds enough USDC,
+  // then (b) the REAL aggregation — a Circle CCTP bridge that burns Σ on Base
+  // Sepolia and mints it onto Arc (forwarder mode, no recipient Arc gas). PLAN
+  // §4: Dynamic has no aggregate product, so CCTP genuinely IS "aggregation"
+  // here. We bridge the TOTAL once and await the mint before shielding.
   emit({ step: EngineStep.Aggregate, status: "running" });
   const agg = await aggregate(recipient.amountUsd);
   if (!agg.sufficient) {
@@ -90,10 +95,22 @@ export async function runSend(
       `Insufficient USDC balance: have ${formatUsd(agg.availableUsdc)}, need ${formatUsd(recipient.amountUsd)}.`,
     );
   }
+
+  // Bridge Σ onto Arc (mint to the sender's Arc address, where the funds land
+  // before the shield). In real mode this is a live CCTP burn+mint; on failure
+  // it throws honestly (no silent fallback) and the send aborts at this step.
+  const bridge = await bridgeToArc({
+    amountUsdc: recipient.amountUsd.toFixed(2),
+    recipientAddress: DEMO_SENDER.address,
+  });
   emit({
     step: EngineStep.Aggregate,
     status: "done",
-    detail: `${formatUsd(agg.availableUsdc)} USDC available`,
+    detail: bridge.simulated
+      ? `Bridged ${formatUsd(recipient.amountUsd)} onto Arc via CCTP (simulated)`
+      : `Bridged ${formatUsd(recipient.amountUsd)} onto Arc via CCTP`,
+    // The mint on Arc is the readable artifact of the aggregation step.
+    explorerUrl: bridge.mintTx.explorerUrl,
   });
 
   // Step 3 — Counterfactual account from a fresh claim secret.
