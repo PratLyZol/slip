@@ -35,17 +35,13 @@ export function isUnlinkConfigured(): boolean {
 }
 
 /**
- * True when we should run every adapter in deterministic simulated mode.
- *
- * Demo mode is on when EITHER:
- *  - NEXT_PUBLIC_DEMO_MODE=true is explicitly set, OR
- *  - NEXT_PUBLIC_DYNAMIC_ENV_ID is missing (no real wallet backend to talk to).
- *
- * Kept as a single source of truth so adapters never branch on env vars directly.
+ * Demo mode has been REMOVED — the app is real-only. This always returns false
+ * so every adapter takes its real path (real wallet, real CCTP bridge, real
+ * Unlink/FX). Real integrations surface honest errors when their credentials are
+ * absent rather than silently simulating. Kept as a single function so the (now
+ * unreachable) sim branches still compile; they can be deleted as cleanup.
  */
 export function isDemoMode(): boolean {
-  if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") return true;
-  if (!DYNAMIC_ENV_ID) return true;
   return false;
 }
 
@@ -120,13 +116,3 @@ export function isSwapConfigured(): boolean {
   return !isDemoMode() && !!CIRCLE_KIT_KEY;
 }
 
-/** A believable fixed balance shown to the demo sender (USDC, human units). */
-export const DEMO_USDC_BALANCE = 1283.5;
-
-/** Demo sender identity surfaced in the "logged in" chrome. */
-export const DEMO_SENDER = {
-  name: "Demo Sender",
-  email: "demo@slip.cash",
-  /** Deterministic, obviously-fake demo EOA. */
-  address: "0x5117De0000000000000000000000000000000001" as const,
-};

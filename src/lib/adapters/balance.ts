@@ -8,7 +8,6 @@
 
 import { createPublicClient, formatUnits, http, type Address } from "viem";
 import { arcTestnet, USDC_ADDRESS, USDC_DECIMALS } from "./arc";
-import { DEMO_USDC_BALANCE, isDemoMode } from "../config";
 
 const ERC20_BALANCE_OF_ABI = [
   {
@@ -32,13 +31,11 @@ function publicClient() {
 }
 
 /**
- * Read the USDC balance (human units) for an address.
- * Demo mode short-circuits to a fixed believable balance.
+ * Read the live USDC balance (human units) for an address on Arc. Returns 0
+ * when no address is connected yet.
  */
 export async function getUsdcBalance(address?: Address): Promise<number> {
-  if (isDemoMode() || !address) {
-    return DEMO_USDC_BALANCE;
-  }
+  if (!address) return 0;
   const raw = await publicClient().readContract({
     address: USDC_ADDRESS,
     abi: ERC20_BALANCE_OF_ABI,

@@ -7,12 +7,24 @@
  */
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import WalletPill from "./WalletPill";
+
+// The Dynamic SDK isn't SSR-safe (touches window at eval). Load the wallet
+// control client-only so it's never part of the static prerender.
+const WalletConnect = dynamic(() => import("./WalletConnect"), {
+  ssr: false,
+  loading: () => (
+    <span className="rounded-full bg-ink-700 px-4 py-1.5 text-[13px] font-semibold text-text-faint">
+      Wallet
+    </span>
+  ),
+});
 
 const NAV = [
   { href: "/", label: "Send", icon: SendIcon },
   { href: "/batch", label: "Batch", icon: BatchIcon },
+  { href: "/bridge", label: "Bridge", icon: BridgeIcon },
   { href: "/private", label: "Private", icon: ShieldIcon },
   { href: "/architecture", label: "How", icon: LayersIcon },
 ] as const;
@@ -26,7 +38,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <Link href="/" className="flex items-center gap-2">
           <Wordmark />
         </Link>
-        <WalletPill />
+        <WalletConnect />
       </header>
 
       <main className="flex flex-1 flex-col px-5 pb-32 pt-4">{children}</main>
@@ -103,6 +115,19 @@ function BatchIcon({ active }: IconProps) {
         stroke={stroke(active)}
         strokeWidth="1.7"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+function BridgeIcon({ active }: IconProps) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 17V9m18 8V9M3 12h18M7 12c0-2 2-3 5-3s5 1 5 3"
+        stroke={stroke(active)}
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );

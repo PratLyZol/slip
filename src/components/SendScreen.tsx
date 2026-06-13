@@ -1,14 +1,17 @@
 "use client";
 
 /**
- * The home screen IS the send screen. Recipient name + big USD amount + Send.
- * On send we run the engine, stream step states into <EngineSteps>, then show
- * the success card with the claim link + QR.
+ * The home screen IS the send screen. A recipients TABLE (add rows like adding
+ * secrets) — each row is a name (arbitrary label for the sender) + the
+ * recipient's email/phone (the identifier their walletless claim is keyed off)
+ * + an amount. On send we run the engine ONCE over all rows (Σ aggregated +
+ * shielded together), stream step states into <EngineSteps>, then show a claim
+ * link per recipient.
  */
 
-import { useCallback, useState } from "react";
-import Link from "next/link";
-import { runSend } from "@/lib/engine";
+import { useCallback, useMemo, useState } from "react";
+import { runBatchSend } from "@/lib/engine";
+import { isEmail, isPhone } from "@/lib/engine/resolve";
 import {
   EngineStep,
   type EngineResult,
@@ -18,7 +21,8 @@ import {
 import { useWallet } from "./WalletProvider";
 import EngineSteps from "./EngineSteps";
 import SuccessCard from "./SuccessCard";
-import { formatAmount } from "@/lib/format";
+import SendResults from "./SendResults";
+import { formatAmount, formatUsd } from "@/lib/format";
 import {
   sentReceiptFromResult,
   saveSentReceipt,
@@ -26,29 +30,67 @@ import {
 
 type Phase = "idle" | "running" | "done";
 
+interface Row {
+  id: string;
+  /** Arbitrary label for the sender — not used by the money path. */
+  name: string;
+  /** Email or phone — the identifier the walletless claim is keyed off. */
+  contact: string;
+  /** Amount in USD for this recipient. */
+  amount: string;
+}
+
+function rid(): string {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `r${Date.now()}${Math.floor(Math.random() * 1e6)}`
+  );
+}
+function emptyRow(): Row {
+  return { id: rid(), name: "", contact: "", amount: "" };
+}
+function contactValid(contact: string): boolean {
+  return isEmail(contact) || isPhone(contact);
+}
+function rowValid(r: Row): boolean {
+  const amt = Number(r.amount);
+  return contactValid(r.contact) && amt > 0 && Number.isFinite(amt);
+}
+
 export default function SendScreen() {
   const wallet = useWallet();
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
+  const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [region, setRegion] = useState<Region>("US");
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [states, setStates] = useState<Partial<Record<EngineStep, StepState>>>(
     {},
   );
-  const [result, setResult] = useState<EngineResult | null>(null);
+  const [results, setResults] = useState<EngineResult[] | null>(null);
+  const [sentRows, setSentRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const amountNum = Number(amount);
+  const validRows = useMemo(() => rows.filter(rowValid), [rows]);
+  const total = useMemo(
+    () => validRows.reduce((sum, r) => sum + Number(r.amount), 0),
+    [validRows],
+  );
   const canSend =
-    phase === "idle" &&
-    recipient.trim().length > 0 &&
-    amountNum > 0 &&
-    Number.isFinite(amountNum);
+    phase === "idle" && Boolean(wallet.address) && validRows.length > 0;
 
   const onStep = useCallback((s: StepState) => {
     setStates((prev) => ({ ...prev, [s.step]: s }));
   }, []);
+
+  function update(id: string, field: "name" | "contact" | "amount", value: string) {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  }
+  function addRow() {
+    setRows((rs) => [...rs, emptyRow()]);
+  }
+  function removeRow(id: string) {
+    setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
+  }
 
   async function handleSend() {
     if (!canSend) return;
@@ -56,18 +98,21 @@ export default function SendScreen() {
     setStates({});
     setPhase("running");
     try {
-      const res = await runSend(
+      const res = await runBatchSend(
         {
-          recipients: [
-            { identifier: recipient.trim(), amountUsd: amountNum, region },
-          ],
+          recipients: validRows.map((r) => ({
+            identifier: r.contact.trim(),
+            amountUsd: Number(r.amount),
+            region,
+          })),
           senderName: wallet.name,
+          senderAddress: wallet.address,
         },
         onStep,
       );
-      // Persist the send-side privacy artifacts for the /private proof view.
-      saveSentReceipt(res.secret, sentReceiptFromResult(res));
-      setResult(res);
+      res.forEach((r) => saveSentReceipt(r.secret, sentReceiptFromResult(r)));
+      setResults(res);
+      setSentRows(validRows);
       setPhase("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -78,70 +123,158 @@ export default function SendScreen() {
   function reset() {
     setPhase("idle");
     setStates({});
-    setResult(null);
+    setResults(null);
+    setSentRows([]);
     setError(null);
-    setRecipient("");
-    setAmount("");
+    setRows([emptyRow()]);
   }
 
-  if (phase === "done" && result) {
+  if (phase === "done" && results) {
+    if (results.length === 1) {
+      const label =
+        sentRows[0]?.name?.trim() || sentRows[0]?.contact || "recipient";
+      return (
+        <SuccessCard
+          result={results[0]}
+          recipient={label}
+          onSendAnother={reset}
+        />
+      );
+    }
     return (
-      <SuccessCard
-        result={result}
-        recipient={recipient.trim()}
-        onSendAnother={reset}
-      />
+      <SendResults results={results} rows={sentRows} onSendAnother={reset} />
     );
   }
 
+  const running = phase === "running";
+
   return (
     <div className="flex flex-1 flex-col">
-      {/* Amount — the hero, lit from behind. */}
+      {/* Total — the hero, lit from behind. */}
       <div className="rise relative mt-2 flex flex-col items-center pt-7">
         <div
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-0 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.06] blur-3xl"
         />
         <label className="kicker">You send</label>
-        <div className="mt-4 flex items-baseline gap-1">
-          <span className="amount-figure text-[38px] text-text-faint">$</span>
-          <input
-            inputMode="decimal"
-            placeholder="0"
-            value={amount}
-            onChange={(e) => {
-              const v = e.target.value.replace(/[^0-9.]/g, "");
-              if ((v.match(/\./g)?.length ?? 0) <= 1) setAmount(v);
-            }}
-            disabled={phase === "running"}
-            className="amount-figure w-[clamp(2ch,60vw,7ch)] bg-transparent text-center text-[68px] font-medium leading-none text-text caret-[var(--volt)] outline-none placeholder:text-ink-600 disabled:opacity-60"
-            aria-label="Amount in USD"
-          />
+        <div className="mt-3 flex items-baseline gap-1">
+          <span className="amount-figure text-[34px] text-text-faint">$</span>
+          <span className="amount-figure text-[60px] font-medium leading-none text-text">
+            {total > 0 ? formatAmount(total) : "0"}
+          </span>
         </div>
         <p className="amount-figure mt-3 text-[12px] text-text-faint">
           {wallet.balanceUsdc !== null
             ? `Balance $${formatAmount(wallet.balanceUsdc)} USDC`
-            : "Loading balance…"}
+            : "Connect a wallet to load balance"}
         </p>
       </div>
 
-      {/* Recipient */}
-      <div className="rise mt-9">
-        <label htmlFor="recipient" className="kicker">
-          To
-        </label>
-        <input
-          id="recipient"
-          placeholder="name, username, or alice.eth"
-          value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
-          disabled={phase === "running"}
-          autoComplete="off"
-          className="focus-volt mt-2.5 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 px-4 py-3.5 text-[16px] text-text outline-none transition-colors placeholder:text-text-faint focus:border-[var(--hair-strong)] disabled:opacity-60"
-        />
+      {/* Recipients table — add rows like adding secrets. */}
+      <div className="rise mt-8">
+        <div className="flex items-center justify-between">
+          <span className="kicker">Recipients</span>
+          <span className="text-[11px] text-text-faint">
+            {validRows.length} ready
+          </span>
+        </div>
+
+        <ul className="mt-2.5 flex flex-col gap-2">
+          {rows.map((r, i) => {
+            const showError =
+              r.contact.trim().length > 0 && !contactValid(r.contact);
+            return (
+              <li key={r.id} className="card p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={r.name}
+                    onChange={(e) => update(r.id, "name", e.target.value)}
+                    disabled={running}
+                    placeholder={`Recipient ${i + 1} — name`}
+                    autoComplete="off"
+                    className="focus-volt min-w-0 flex-1 rounded-lg border border-[var(--hair)] bg-ink-850 px-3 py-2 text-[14px] font-semibold text-text outline-none transition-colors placeholder:text-text-faint focus:border-[var(--hair-strong)] disabled:opacity-60"
+                  />
+                  <button
+                    onClick={() => removeRow(r.id)}
+                    disabled={running || rows.length === 1}
+                    aria-label="Remove recipient"
+                    className="focus-volt grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--hair)] text-text-faint transition-colors hover:text-danger disabled:opacity-30"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M6 6l12 12M18 6 6 18"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={r.contact}
+                    onChange={(e) => update(r.id, "contact", e.target.value)}
+                    disabled={running}
+                    inputMode="email"
+                    placeholder="phone or email"
+                    autoComplete="off"
+                    aria-invalid={showError}
+                    className={`focus-volt min-w-0 flex-1 rounded-lg border bg-ink-850 px-3 py-2 text-[14px] text-text outline-none transition-colors placeholder:text-text-faint disabled:opacity-60 ${
+                      showError
+                        ? "border-danger"
+                        : "border-[var(--hair)] focus:border-[var(--hair-strong)]"
+                    }`}
+                  />
+                  <div className="flex w-[34%] items-center rounded-lg border border-[var(--hair)] bg-ink-850 px-2.5 focus-within:border-[var(--hair-strong)]">
+                    <span className="amount-figure text-[13px] text-text-faint">
+                      $
+                    </span>
+                    <input
+                      value={r.amount}
+                      onChange={(e) =>
+                        update(
+                          r.id,
+                          "amount",
+                          e.target.value.replace(/[^0-9.]/g, ""),
+                        )
+                      }
+                      disabled={running}
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="amount-figure min-w-0 flex-1 bg-transparent px-1 py-2 text-right text-[14px] text-text outline-none placeholder:text-text-faint disabled:opacity-60"
+                    />
+                  </div>
+                </div>
+
+                {showError && (
+                  <p className="mt-1.5 text-[11px] text-danger">
+                    Enter a phone number or email — that&apos;s how they claim.
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        <button
+          onClick={addRow}
+          disabled={running}
+          className="focus-volt mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--hair-strong)] py-2.5 text-[13px] font-semibold text-text-dim transition-colors hover:text-text disabled:opacity-50"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M12 5v14M5 12h14"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+          Add recipient
+        </button>
       </div>
 
-      {/* Where the recipient is — drives FX into their local money at claim. */}
+      {/* Where the recipients are — drives FX into their local money at claim. */}
       <div className="rise mt-5">
         <span className="kicker">Where are they?</span>
         <div className="mt-2.5 flex gap-1 rounded-2xl border border-[var(--hair)] bg-ink-900 p-1">
@@ -149,7 +282,7 @@ export default function SendScreen() {
             <button
               key={r}
               onClick={() => setRegion(r)}
-              disabled={phase === "running"}
+              disabled={running}
               aria-pressed={region === r}
               className={`flex-1 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all disabled:opacity-60 ${
                 region === r
@@ -177,7 +310,7 @@ export default function SendScreen() {
       )}
 
       {/* Live engine progress */}
-      {phase === "running" && (
+      {running && (
         <div className="card card-pop animate-slip-rise mt-7 p-5">
           <p className="kicker mb-4">Sending</p>
           <EngineSteps states={states} />
@@ -192,19 +325,14 @@ export default function SendScreen() {
         disabled={!canSend}
         className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-30"
       >
-        {phase === "running" ? "Sending…" : "Send"}
+        {running
+          ? "Sending…"
+          : !wallet.address
+            ? "Connect a wallet to send"
+            : validRows.length <= 1
+              ? `Send ${total > 0 ? formatUsd(total) : ""}`.trim()
+              : `Send ${formatUsd(total)} to ${validRows.length} people`}
       </button>
-
-      {/* Multi-recipient is the same recipients[] path — Batch is its surface. */}
-      {phase !== "running" && (
-        <Link
-          href="/batch"
-          className="focus-volt rise mt-3.5 text-center text-[12.5px] font-medium text-text-faint transition-colors hover:text-text-dim"
-        >
-          Paying several people?{" "}
-          <span className="text-text-dim">Send a batch →</span>
-        </Link>
-      )}
     </div>
   );
 }

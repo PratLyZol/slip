@@ -5,9 +5,7 @@ import {
   Spline_Sans_Mono,
 } from "next/font/google";
 import "./globals.css";
-import Providers from "@/components/Providers";
-import WalletProvider from "@/components/WalletProvider";
-import AppShell from "@/components/AppShell";
+import ClientRoot from "@/components/ClientRoot";
 
 const serif = Instrument_Serif({
   variable: "--font-display",
@@ -50,11 +48,7 @@ export default function RootLayout({
       className={`${serif.variable} ${body.variable} ${figures.variable} h-full antialiased`}
     >
       <body className="app-canvas grain min-h-dvh text-text">
-        <Providers>
-          <WalletProvider>
-            <AppShell>{children}</AppShell>
-          </WalletProvider>
-        </Providers>
+        <ClientRoot>{children}</ClientRoot>
       </body>
     </html>
   );

@@ -18,10 +18,12 @@
 import type { Address } from "viem";
 import { getUsdcBalance } from "../adapters/balance";
 import {
+  bridgeViaRoute,
   getBridgeOps,
   type BridgeToArcParams,
   type BridgeToArcResult,
 } from "../adapters/bridge";
+import { isDemoMode } from "../config";
 import { simLatency, sleep } from "../demo/sim";
 import type { AggregateResult } from "./types";
 
@@ -49,5 +51,11 @@ export async function aggregate(
 export async function bridgeToArc(
   params: BridgeToArcParams,
 ): Promise<BridgeToArcResult> {
+  // Real mode in the BROWSER (the send flow runs client-side): bridge-kit +
+  // CCTP_PRIVATE_KEY are server-only, so go through the /api/bridge route. Demo
+  // mode simulates client-side; on the server we call the real adapter directly.
+  if (!isDemoMode() && typeof window !== "undefined") {
+    return bridgeViaRoute(params);
+  }
   return getBridgeOps().bridgeToArc(params);
 }

@@ -58,6 +58,8 @@ export interface SendRequest {
   recipients: Recipient[];
   /** Optional sender display label embedded in each claim link. */
   senderName?: string;
+  /** Connected sender wallet address — the Arc address aggregated funds mint to. */
+  senderAddress?: Address;
 }
 
 /** The seven steps of a send (PRD §2). Ordered. */

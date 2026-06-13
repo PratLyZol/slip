@@ -1,19 +1,17 @@
 import type { Address } from "viem";
 
-/** Unified wallet view consumed by the UI, regardless of demo vs real backend. */
+/** Unified wallet view consumed by the UI. Real-only (the connected wallet). */
 export interface WalletState {
-  /** True when running on the deterministic demo backend. */
-  demo: boolean;
-  /** Whether a sender identity is present (always true in demo). */
+  /** Whether a wallet is connected. */
   loggedIn: boolean;
-  /** Display name for the logged-in sender. */
+  /** Display name for the connected wallet (short address). */
   name: string;
-  /** Connected/embedded wallet address, if any. */
+  /** Connected wallet address, if any. */
   address?: Address;
   /** USDC balance in human units, or null while loading. */
   balanceUsdc: number | null;
-  /** Open the login flow (no-op in demo). */
+  /** Open the wallet connect flow. */
   login: () => void;
-  /** Sign out (no-op in demo). */
+  /** Disconnect the wallet. */
   logout: () => void;
 }
