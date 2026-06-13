@@ -24,6 +24,7 @@
 
 import { formatUsd } from "../format";
 import { getShieldOps } from "../adapters/unlink";
+import { cctpSourceByChainId } from "../adapters/cctp-chains";
 import { aggregate, bridgeToArc } from "./aggregate";
 import { buildClaimUrl } from "./claimLink";
 import { deriveCounterfactual, generateClaimSecret } from "./counterfactual";
@@ -141,7 +142,23 @@ export async function runBatchSend(
   // the REAL aggregation — a Circle CCTP bridge of Σ ONCE (burn on Base Sepolia,
   // mint on Arc, forwarder mode). PLAN §4: CCTP genuinely IS "aggregation" here.
   emit({ step: EngineStep.Aggregate, status: "running" });
-  const agg = await aggregate(total);
+  // The wallet's connected ORIGIN chain is the CCTP burn source. It must be a
+  // chain CCTP can burn from; the UI gates on this too, but validate here as
+  // defence in depth.
+  const originSource = cctpSourceByChainId(req.originChainId);
+  if (!originSource) {
+    emit({
+      step: EngineStep.Aggregate,
+      status: "failed",
+      detail: "Switch your wallet to a supported network to send",
+    });
+    throw new Error(
+      `Wallet is on an unsupported network (chain ${req.originChainId ?? "unknown"}). ` +
+        "Switch to a CCTP-supported chain (e.g. Base Sepolia) before sending.",
+    );
+  }
+  // Sufficiency check reads the connected wallet's USDC on that origin chain.
+  const agg = await aggregate(total, req.senderAddress, originSource.chainId);
   if (!agg.sufficient) {
     emit({
       step: EngineStep.Aggregate,
@@ -176,25 +193,29 @@ export async function runBatchSend(
     });
     throw new Error("No wallet connected — connect a wallet before sending.");
   }
-  const baseSepoliaWalletClient = await req.getWalletClient("84532");
-  if (!baseSepoliaWalletClient) {
+  const originWalletClient = await req.getWalletClient(
+    String(originSource.chainId),
+  );
+  if (!originWalletClient) {
     emit({
       step: EngineStep.Aggregate,
       status: "failed",
-      detail: "Could not get a Base Sepolia wallet client — allow the network",
+      detail: `Could not get a ${originSource.name} wallet client — allow the network`,
     });
     throw new Error(
-      "Could not obtain a Base Sepolia wallet client — connect a wallet and allow the Base Sepolia network.",
+      `Could not obtain a ${originSource.name} wallet client — connect a wallet and allow the ${originSource.name} network.`,
     );
   }
   const bridge = await bridgeToArc(
     {
       amountUsdc: totalUsdc,
       recipientAddress: req.senderAddress,
+      // Burn from the wallet's connected origin chain (dynamic CCTP source).
+      sourceChain: originSource.bridgeKitChain,
     },
-    // Frozen seam: the engine passes the resolved Base Sepolia WalletClient that
-    // signs the wallet-funded CCTP burn (real mode).
-    baseSepoliaWalletClient,
+    // Frozen seam: the engine passes the resolved ORIGIN WalletClient that signs
+    // the wallet-funded CCTP burn (real mode).
+    originWalletClient,
   );
   emit({
     step: EngineStep.Aggregate,

@@ -32,6 +32,7 @@
 
 import type { EIP1193Provider, Hex, WalletClient } from "viem";
 import { BridgeKit, TransferSpeed } from "@circle-fin/bridge-kit";
+import type { BridgeChainIdentifier } from "@circle-fin/bridge-kit";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import {
   CCTP_DEST_CHAIN,
@@ -41,12 +42,18 @@ import {
 } from "./arc";
 import type { TxRef } from "../engine/types";
 
-/** Inputs for an aggregation bridge: how much, and where it should mint. */
+/** Inputs for an aggregation bridge: how much, where it should mint, from where. */
 export interface BridgeToArcParams {
   /** Σ amount of USDC to bridge, human units as a string (e.g. "50.00"). */
   amountUsdc: string;
   /** The Arc address the minted USDC should land on (the sender's Arc EOA). */
   recipientAddress: string;
+  /**
+   * bridge-kit `from.chain` — the wallet's connected ORIGIN chain to burn from
+   * (e.g. "Base_Sepolia", "Arbitrum_Sepolia"). Comes from the CCTP source
+   * registry keyed by the wallet's live chain id. Defaults to Base Sepolia.
+   */
+  sourceChain?: BridgeChainIdentifier;
 }
 
 /** Result of an aggregation bridge: the two public on-chain edges. */
@@ -105,7 +112,7 @@ export async function bridgeWithWalletClient(
   walletClient: WalletClient,
   params: BridgeToArcParams,
 ): Promise<BridgeToArcResult> {
-  const { amountUsdc, recipientAddress } = params;
+  const { amountUsdc, recipientAddress, sourceChain } = params;
 
   // Wrap the viem WalletClient as an EIP-1193 provider. A viem WalletClient's
   // `.request` method is EIP-1193-compatible; bind it to preserve `this` when
@@ -122,7 +129,7 @@ export async function bridgeWithWalletClient(
   });
 
   const result = await new BridgeKit().bridge({
-    from: { adapter, chain: CCTP_SOURCE_CHAIN },
+    from: { adapter, chain: sourceChain ?? CCTP_SOURCE_CHAIN },
     to: {
       adapter,
       chain: CCTP_DEST_CHAIN,

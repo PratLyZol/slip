@@ -55,9 +55,12 @@ function DisconnectedWalletProvider({
     loggedIn: false,
     name: "",
     address: undefined,
+    chainId: undefined,
     balanceUsdc: null,
     login: () => {},
     logout: () => {},
+    getNetwork: async () => undefined,
+    switchNetwork: async () => {},
     getWalletClient: async () => undefined,
   };
   return (
@@ -72,11 +75,48 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
   const primaryWallet = wallets[0];
   const address = primaryWallet?.address as Address | undefined;
   const [balanceUsdc, setBalanceUsdc] = useState<number | null>(null);
+  const [chainId, setChainId] = useState<number | undefined>(undefined);
 
+  // Read the wallet's current network (no switch). Stable identity for callers.
+  const getNetwork = useCallback(async (): Promise<number | undefined> => {
+    if (!primaryWallet || !isEthereumWallet(primaryWallet)) return undefined;
+    const net = await primaryWallet.getNetwork();
+    return typeof net === "number" ? net : undefined;
+  }, [primaryWallet]);
+
+  const switchNetwork = useCallback(
+    async (target: number): Promise<void> => {
+      if (!primaryWallet || !isEthereumWallet(primaryWallet)) return;
+      await primaryWallet.switchNetwork(target);
+      setChainId(target);
+    },
+    [primaryWallet],
+  );
+
+  // Track the connected origin chain id.
+  useEffect(() => {
+    if (!address) {
+      setChainId(undefined);
+      return;
+    }
+    let cancelled = false;
+    getNetwork()
+      .then((id) => {
+        if (!cancelled) setChainId(id);
+      })
+      .catch(() => {
+        if (!cancelled) setChainId(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, getNetwork]);
+
+  // Read USDC on the connected ORIGIN chain (re-reads when the chain switches).
   useEffect(() => {
     if (!address) return;
     let cancelled = false;
-    getUsdcBalance(address)
+    getUsdcBalance(address, chainId)
       .then((b) => {
         if (!cancelled) setBalanceUsdc(b);
       })
@@ -86,7 +126,7 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [address]);
+  }, [address, chainId]);
 
   /**
    * Obtain a viem WalletClient for the requested chain from the connected
@@ -115,9 +155,12 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
     loggedIn: Boolean(isLoggedIn && address),
     name: address ? shortAddress(address) : "",
     address,
+    chainId,
     balanceUsdc,
     login: () => setShowAuthFlow(true),
     logout: () => handleLogOut(),
+    getNetwork,
+    switchNetwork,
     getWalletClient,
   };
 

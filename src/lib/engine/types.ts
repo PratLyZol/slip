@@ -61,11 +61,17 @@ export interface SendRequest {
   /** Connected sender wallet address — the Arc address aggregated funds mint to. */
   senderAddress?: Address;
   /**
+   * The wallet's connected ORIGIN chain id — the chain the CCTP burn is signed
+   * on and the wallet's USDC is read from. Must be a CCTP-supported source (see
+   * adapters/cctp-chains); SendScreen gates on this and the engine validates it.
+   */
+  originChainId?: number;
+  /**
    * Obtain a viem WalletClient for the given chainId (decimal string) from the
    * connected Dynamic wallet. Injected by SendScreen from `wallet.getWalletClient`.
    * Required for the real CCTP bridge path — the burn is signed by the connected
-   * wallet on Base Sepolia (chainId "84532"), not a server-held private key.
-   * Absent in demo mode or when no wallet is connected.
+   * wallet on its origin chain, not a server-held private key. Absent when no
+   * wallet is connected.
    */
   getWalletClient?: (chainId: string) => Promise<WalletClient | undefined>;
 }
