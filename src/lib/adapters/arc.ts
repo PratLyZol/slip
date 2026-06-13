@@ -85,6 +85,27 @@ export const BASE_SEPOLIA_CHAIN_ID = 84532;
 export const BASE_SEPOLIA_RPC_URL =
   process.env.BASE_SEPOLIA_RPC_URL ?? "https://sepolia.base.org";
 
+/**
+ * Dynamic `overrides.evmNetworks` entry for Base Sepolia (CCTP burn side).
+ * The Dynamic embedded wallet must be able to sign on Base Sepolia so the
+ * wallet-signed bridge burn can be authorised by the connected wallet.
+ * Shape matches `arcDynamicNetwork` above (docs/research/dynamic.md §2).
+ */
+export const baseSepoliaDynamicNetwork = {
+  chainId: BASE_SEPOLIA_CHAIN_ID,
+  networkId: BASE_SEPOLIA_CHAIN_ID,
+  chainName: "Base Sepolia",
+  name: "Base Sepolia",
+  nativeCurrency: {
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18,
+  },
+  rpcUrls: ["https://sepolia.base.org"],
+  blockExplorerUrls: ["https://sepolia.basescan.org"],
+  iconUrls: [] as string[],
+};
+
 /** USDC on Base Sepolia (CCTP-burnable). Verified Circle testnet address. */
 export const BASE_SEPOLIA_USDC_ADDRESS: Address =
   "0x036CbD53842c5426634e7929541eC2318f3dCF7e";

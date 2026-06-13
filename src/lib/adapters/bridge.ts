@@ -5,24 +5,20 @@
  * Base Sepolia, mint it natively on Arc, in ONE call, forwarder mode so the
  * recipient needs no Arc gas.
  *
- * Wraps `@circle-fin/bridge-kit` + `@circle-fin/adapter-viem-v2` behind a small
- * {@link BridgeOps} interface so the engine never imports the SDK directly
- * (AGENTS.md: "SDK wiring lives ONLY in adapters"). Two implementations:
+ * Wraps `@circle-fin/bridge-kit` + `@circle-fin/adapter-viem-v2` so the engine
+ * never imports the SDK directly (AGENTS.md: "SDK wiring lives ONLY in
+ * adapters"). ONE real implementation, no simulation:
  *
- *  - DEMO ({@link demoBridgeOps}): deterministic simulation. A fake burn tx on
- *    the Base Sepolia explorer + a fake mint tx on ArcScan, realistic latency.
- *    Credential-free so the demo stays green.
- *  - REAL ({@link realBridgeOps}): the live CCTP bridge via bridge-kit. The burn
- *    is paid by the `CCTP_PRIVATE_KEY` EOA on Base Sepolia; the mint is relayed
- *    by Circle's Orbit forwarder onto Arc (no Arc gas for anyone). SERVER-ONLY —
- *    the private key is a secret and must never reach the browser.
+ *  - {@link bridgeWithWalletClient}: the live CCTP bridge via bridge-kit. The
+ *    burn is signed by + funded from the CONNECTED WALLET on Base Sepolia (not a
+ *    server key). The mint is relayed by Circle's Orbit forwarder onto Arc (no
+ *    Arc gas for anyone). Runs CLIENT-SIDE using the wallet's viem WalletClient
+ *    wrapped as an EIP-1193 provider. CCTP_PRIVATE_KEY is NOT used here, and
+ *    there is NO demo/simulation fallback — on failure it throws an HONEST error
+ *    so a live route can never report a fake-success burn/mint.
  *
- * NO per-adapter feature flag (user directive): the adapter branches on the
- * GLOBAL {@link isDemoMode} only. In real mode the bridge runs for real and, on
- * failure, throws an HONEST error — it does NOT silently fall back to the sim.
- *
- * bridge-kit API used (verified against the INSTALLED package @1.10.2, not just
- * the PLAN.md snippet — the PLAN guide matches the public surface):
+ * bridge-kit API used (verified against the INSTALLED package, not just the
+ * PLAN.md snippet — the PLAN guide matches the public surface):
  *   new BridgeKit().bridge({
  *     from: { adapter, chain: "Base_Sepolia" },
  *     to:   { adapter, chain: "Arc_Testnet", recipientAddress, useForwarder: true },
@@ -30,19 +26,19 @@
  *   }) => Promise<BridgeResult>
  * where BridgeResult is `{ state: "success"|"error"|"pending", steps: BridgeStep[] }`
  * and each BridgeStep is `{ name, state, txHash?, explorerUrl?, forwarded? }`.
- * `createViemAdapterFromPrivateKey({ privateKey })` builds the EVM signer; one
- * adapter works across both chains (the from/to chains are passed per-leg).
+ * `createViemAdapterFromProvider({ provider })` builds the EVM signer from an
+ * EIP-1193 provider; a viem WalletClient's `.request` method is EIP-1193 compat.
  */
 
-import type { Hex } from "viem";
+import type { EIP1193Provider, Hex, WalletClient } from "viem";
+import { BridgeKit, TransferSpeed } from "@circle-fin/bridge-kit";
+import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import {
   CCTP_DEST_CHAIN,
   CCTP_SOURCE_CHAIN,
   baseSepoliaTxUrl,
   txUrl,
 } from "./arc";
-import { CCTP_PRIVATE_KEY, isDemoMode } from "../config";
-import { simLatency, simTxOn, sleep } from "../demo/sim";
 import type { TxRef } from "../engine/types";
 
 /** Inputs for an aggregation bridge: how much, and where it should mint. */
@@ -59,49 +55,17 @@ export interface BridgeToArcResult {
   burnTx: TxRef;
   /** The CCTP mint on Arc (destination side, forwarder-relayed). */
   mintTx: TxRef;
-  /** True when both txs were deterministic demo simulations, not real. */
+  /**
+   * Always `false` — there is no simulation path. Retained so the engine's
+   * existing `bridge.simulated` branch keeps compiling (it resolves to the
+   * "real" copy). A live route can never report a simulated burn/mint.
+   */
   simulated: boolean;
 }
 
-/**
- * The aggregation interface the engine programs against. Both the real CCTP
- * bridge and the demo simulation implement it.
- */
-export interface BridgeOps {
-  /** True when this is the real bridge-kit path (vs. the demo simulation). */
-  readonly real: boolean;
-  /**
-   * Bridge Σ(amount) USDC from Base Sepolia onto Arc (mint to
-   * `recipientAddress`). Bridges the total ONCE — never per-recipient.
-   */
-  bridgeToArc(params: BridgeToArcParams): Promise<BridgeToArcResult>;
-}
-
-// ---------------------------------------------------------------------------
-// DEMO implementation — deterministic, no credentials, no network.
-// ---------------------------------------------------------------------------
-
-const demoBridgeOps: BridgeOps = {
-  real: false,
-
-  async bridgeToArc({ amountUsdc, recipientAddress }) {
-    // Realistic FAST CCTP latency Base Sepolia → Arc (PLAN §8: docs ~8–20s; we
-    // keep the demo snappy but non-instant so the await reads as real work).
-    await sleep(simLatency(1200, 2600));
-    // Burn lives on the SOURCE chain explorer (Base Sepolia); mint on Arc.
-    const burnTx = simTxOn(
-      baseSepoliaTxUrl,
-      "cctp-burn",
-      amountUsdc,
-      recipientAddress,
-    );
-    const mintTx = simTxOn(txUrl, "cctp-mint", amountUsdc, recipientAddress);
-    return { burnTx, mintTx, simulated: true };
-  },
-};
-
 // ---------------------------------------------------------------------------
 // REAL implementation — @circle-fin/bridge-kit, Base Sepolia → Arc, forwarder.
+// The only implementation: wallet-signed, client-side, no simulation fallback.
 // ---------------------------------------------------------------------------
 
 /** Pull a step's tx hash out of a BridgeResult by matching its name. */
@@ -116,125 +80,85 @@ function stepHash(
   return hash ? (hash as Hex) : undefined;
 }
 
-const realBridgeOps: BridgeOps = {
-  real: true,
-
-  async bridgeToArc({ amountUsdc, recipientAddress }) {
-    if (!CCTP_PRIVATE_KEY) {
-      throw new Error(
-        "CCTP_PRIVATE_KEY missing — cannot run the real CCTP bridge.",
-      );
-    }
-    // The CCTP burn is paid by a funded EOA whose private key is a SECRET; it
-    // must never ship to the browser. Guard so a stray client-side call fails
-    // loudly rather than leaking the key (mirrors the Unlink admin-path guard).
-    if (typeof window !== "undefined") {
-      throw new Error(
-        "Real CCTP bridge is server-only (CCTP_PRIVATE_KEY) — not callable in the browser.",
-      );
-    }
-    // Runtime-resolved specifiers keep the bundler from statically pulling the
-    // (Node-only) bridge-kit + adapter into the browser bundle. They still
-    // type-check and are reachable server-side when CCTP_PRIVATE_KEY is present.
-    const bridgeKitMod = "@circle-fin/bridge-kit";
-    const adapterMod = "@circle-fin/adapter-viem-v2";
-    const { BridgeKit, TransferSpeed } = (await import(
-      /* webpackIgnore: true */ /* turbopackIgnore: true */ bridgeKitMod
-    )) as typeof import("@circle-fin/bridge-kit");
-    const { createViemAdapterFromPrivateKey } = (await import(
-      /* webpackIgnore: true */ /* turbopackIgnore: true */ adapterMod
-    )) as typeof import("@circle-fin/adapter-viem-v2");
-
-    // One adapter (the funded Base Sepolia EOA) signs the burn. The mint is
-    // relayed by Circle's Orbit forwarder, so no destination adapter/gas needed.
-    const adapter = createViemAdapterFromPrivateKey({
-      privateKey: CCTP_PRIVATE_KEY,
-    });
-
-    const result = await new BridgeKit().bridge({
-      from: { adapter, chain: CCTP_SOURCE_CHAIN },
-      to: {
-        adapter,
-        chain: CCTP_DEST_CHAIN,
-        recipientAddress,
-        useForwarder: true,
-      },
-      amount: amountUsdc,
-      config: { transferSpeed: TransferSpeed.FAST },
-    });
-
-    if (result.state !== "success") {
-      // Surface the first errored step's message honestly — do NOT mask.
-      const failed = result.steps.find((s) => s.state === "error");
-      const reason =
-        failed?.errorMessage ?? `bridge state: ${result.state}`;
-      throw new Error(`CCTP bridge failed — ${reason}`);
-    }
-
-    const burnHash = stepHash(result.steps, "burn");
-    const mintHash = stepHash(result.steps, "mint");
-    if (!burnHash || !mintHash) {
-      throw new Error(
-        "CCTP bridge succeeded but burn/mint tx hashes were not reported.",
-      );
-    }
-
-    return {
-      burnTx: {
-        hash: burnHash,
-        explorerUrl: baseSepoliaTxUrl(burnHash),
-        simulated: false,
-      },
-      mintTx: {
-        hash: mintHash,
-        explorerUrl: txUrl(mintHash),
-        simulated: false,
-      },
-      simulated: false,
-    };
-  },
-};
-
 /**
- * Select the active BridgeOps. Real bridge-kit path when NOT in demo mode;
- * otherwise the deterministic demo simulation. NO per-adapter flag — branches
- * on the GLOBAL demo mode only (user directive).
+ * Bridge USDC from Base Sepolia to Arc using the CONNECTED WALLET's viem
+ * WalletClient as the signer. The burn is funded by — and signed by — the
+ * Dynamic embedded wallet; the same wallet receives the mint on Arc.
+ *
+ * The viem WalletClient exposes a `.request` method that is EIP-1193 compatible.
+ * We wrap it as `{ request: walletClient.request.bind(walletClient) }` and pass
+ * it to `createViemAdapterFromProvider` — that is the ENTIRE provider wrapping.
+ *
+ * bridge-kit + the viem adapter are imported STATICALLY at the top of this module
+ * so Turbopack/webpack bundle them into the client chunk normally. Their
+ * transitive deps all ship browser builds (`pino` has a `browser` field →
+ * browser.js, `@solana/web3.js`/`@ethersproject/*` are browser-safe), so the
+ * client build resolves them without Node-built-in shims — verified by
+ * `npm run build`. (An earlier version used `turbopackIgnore` dynamic imports;
+ * that left bare specifiers the browser cannot resolve at runtime, so it was
+ * removed in favour of real bundling.)
+ *
+ * `createViemAdapterFromProvider` is ASYNC (returns Promise<ViemAdapter>) — it
+ * must be awaited before the adapter is passed to BridgeKit.bridge().
  */
-export function getBridgeOps(): BridgeOps {
-  return isDemoMode() ? demoBridgeOps : realBridgeOps;
-}
-
-/** True when the demo simulation is the active bridge path. */
-export function bridgeIsSimulated(): boolean {
-  return isDemoMode();
-}
-
-/** Response shape of POST /api/bridge (see src/app/api/bridge/route.ts). */
-interface BridgeRouteResponse {
-  ok: boolean;
-  burnTx?: TxRef;
-  mintTx?: TxRef;
-  error?: string;
-}
-
-/**
- * Real-mode bridge from the BROWSER: POST to /api/bridge, which runs the real
- * bridge-kit flow server-side (where CCTP_PRIVATE_KEY lives). Mirrors the
- * engine/fx.ts → /api/fx pattern so the engine's aggregate step works from the
- * client in real mode without bundling bridge-kit or leaking the key. Throws an
- * honest error on a non-OK response — never masks a failure.
- */
-export async function bridgeViaRoute(
+export async function bridgeWithWalletClient(
+  walletClient: WalletClient,
   params: BridgeToArcParams,
 ): Promise<BridgeToArcResult> {
-  const res = await fetch("/api/bridge", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+  const { amountUsdc, recipientAddress } = params;
+
+  // Wrap the viem WalletClient as an EIP-1193 provider. A viem WalletClient's
+  // `.request` method is EIP-1193-compatible; bind it to preserve `this` when
+  // bridge-kit calls it internally. The adapter only exercises `request`, so
+  // casting the single-method object to EIP1193Provider is safe here.
+  const eip1193Provider = {
+    request: walletClient.request.bind(walletClient),
+  } as unknown as EIP1193Provider;
+
+  // Default (user-controlled) capabilities: the connected wallet owns the
+  // address, so no `address` field is required in from/to. Must be awaited.
+  const adapter = await createViemAdapterFromProvider({
+    provider: eip1193Provider,
   });
-  const data = (await res.json().catch(() => ({}))) as BridgeRouteResponse;
-  if (!res.ok || !data.ok || !data.burnTx || !data.mintTx) {
-    throw new Error(data.error ?? `[slip] CCTP bridge route failed (${res.status}).`);
+
+  const result = await new BridgeKit().bridge({
+    from: { adapter, chain: CCTP_SOURCE_CHAIN },
+    to: {
+      adapter,
+      chain: CCTP_DEST_CHAIN,
+      recipientAddress,
+      useForwarder: true,
+    },
+    amount: amountUsdc,
+    config: { transferSpeed: TransferSpeed.FAST },
+  });
+
+  if (result.state !== "success") {
+    // Surface the first errored step's message honestly — do NOT mask.
+    const failed = result.steps.find((s) => s.state === "error");
+    const reason = failed?.errorMessage ?? `bridge state: ${result.state}`;
+    throw new Error(`CCTP bridge failed — ${reason}`);
   }
-  return { burnTx: data.burnTx, mintTx: data.mintTx, simulated: false };
+
+  const burnHash = stepHash(result.steps, "burn");
+  const mintHash = stepHash(result.steps, "mint");
+  if (!burnHash || !mintHash) {
+    throw new Error(
+      "CCTP bridge succeeded but burn/mint tx hashes were not reported.",
+    );
+  }
+
+  return {
+    burnTx: {
+      hash: burnHash,
+      explorerUrl: baseSepoliaTxUrl(burnHash),
+      simulated: false,
+    },
+    mintTx: {
+      hash: mintHash,
+      explorerUrl: txUrl(mintHash),
+      simulated: false,
+    },
+    simulated: false,
+  };
 }

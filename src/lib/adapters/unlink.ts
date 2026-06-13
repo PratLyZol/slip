@@ -21,15 +21,17 @@
  *  - `seed = keccak(batchSecret)` derives the SENDER's Unlink account (index 0).
  *  - `seed = keccak(claimSecret)` derives the CLAIM's Unlink account (index 0).
  *    DIFFERENT SEEDS, both at accountIndex 0 — not different indices on one seed.
- *  - Send = shield Σ once into the sender's Unlink balance (faucet, gasless) →
- *    private `transfer` to each claim's unlink1 address (the leg where amount +
- *    the sender↔recipient edge vanish).
+ *  - Send = shield Σ once into the sender's Unlink balance (a WALLET-FUNDED
+ *    `depositWithApproval` of the bridged USDC, signed by the connected wallet
+ *    on Arc) → private `transfer` to each claim's unlink1 address (the leg where
+ *    amount + the sender↔recipient edge vanish).
  *  - Claim = re-derive the claim account from its secret → `withdraw` to the
  *    recipient's public EOA (relayer-submitted, recipient pays no gas).
  *
- * The real path may fail without an admin key / faucet liquidity. Callers
- * (engine) catch and degrade per PLAN.md — the privacy leg must NEVER block the
- * end-to-end demo. Demo mode runs with ZERO credentials.
+ * The real path may fail without an admin key, or if the wallet rejects /
+ * underfunds the deposit. Callers (engine) catch and degrade per PLAN.md — the
+ * privacy leg must NEVER block the end-to-end demo. Demo mode runs with ZERO
+ * credentials.
  *
  * Unlink API notes (verified against the INSTALLED package @0.3.0-canary.598 —
  * see docs/research/unlink.md "Correction" + the browser/admin `.d.ts`):
@@ -38,9 +40,10 @@
  *    an `UnlinkLocalAccount`; `getAddress()` on it is ASYNC → bech32 `unlink1…`.
  *  - Browser client wires `registerUrl` (string) + `authorizationToken: { url }`
  *    to the two server routes; `ensureRegistered()` POSTs the registration.
- *  - `faucet.requestPrivateTokens({ token, amount })` shields tokens gaslessly.
- *    It returns `{ tx_id, status }` (NOT a TransactionHandle — no `.wait()`, and
- *    the faucet tx is not pollable). We surface `tx_id` on the public shield leg.
+ *  - `depositWithApproval({ token, amount, evm })` does a REAL on-chain ERC-20
+ *    approve + deposit (wallet-funded; `evm = evm.fromViem({ walletClient })`).
+ *    It returns a `TransactionHandle`; `.wait()` yields a `TransactionResult`
+ *    with a real `txHash` — surfaced on the public shield edge.
  *  - `transfer` / `withdraw` return a `TransactionHandle`; `.wait()` yields a
  *    `TransactionResult { txId, status, txHash? }`. Terminal SUCCESS is
  *    `status === "processed"` — assert it (NOT `!== "failed"`).
@@ -48,11 +51,11 @@
  *    opaque `proofRef` (NOT an explorer link) for the "no readable middle" story.
  */
 
-import { account, createUnlinkClient } from "@unlink-xyz/sdk/browser";
-import { keccak256, type Hex } from "viem";
+import { account, createUnlinkClient, evm } from "@unlink-xyz/sdk/browser";
+import { createPublicClient, http, keccak256, type Hex, type WalletClient } from "viem";
 import { UNLINK_APP_ID, UNLINK_API_KEY, isDemoMode, isUnlinkConfigured } from "../config";
 import { simLatency, simTx, sleep, fakeTxHash } from "../demo/sim";
-import { UNLINK_ARC_ENVIRONMENT, USDC_ADDRESS, txUrl } from "./arc";
+import { UNLINK_ARC_ENVIRONMENT, USDC_ADDRESS, arcTestnet, txUrl } from "./arc";
 import type { PrivacyLeg } from "../engine/types";
 
 /**
@@ -79,11 +82,18 @@ export interface ShieldOps {
   claimAddress(claimSecret: Hex): Promise<string>;
 
   /**
-   * Shield Σ (the batch total) once into the SENDER's Unlink balance via the
-   * gasless faucet. PUBLIC edge — a deposit into the shielded pool. Returns the
-   * shield leg.
+   * Shield Σ (the batch total) once into the SENDER's Unlink balance via a
+   * WALLET-FUNDED `depositWithApproval` of the bridged USDC. PUBLIC edge — a
+   * real on-chain ERC-20 approve + deposit into the shielded pool, signed by the
+   * connected wallet (`walletClient`) on Arc. Returns the shield leg (with a
+   * real tx hash, unlike the old gasless faucet). The demo path ignores
+   * `walletClient`.
    */
-  shieldSender(batchSecret: Hex, amountUsdc: string): Promise<PrivacyLeg>;
+  shieldSender(
+    batchSecret: Hex,
+    amountUsdc: string,
+    walletClient: WalletClient,
+  ): Promise<PrivacyLeg>;
 
   /**
    * Private transfer from the sender's shielded balance to ONE claim's unlink
@@ -161,7 +171,8 @@ const demoShieldOps: ShieldOps = {
   },
 
   async shieldSender(batchSecret, amountUsdc) {
-    // PUBLIC edge: a visible deposit of Σ into the shielded pool.
+    // PUBLIC edge: a visible deposit of Σ into the shielded pool. The demo path
+    // needs no walletClient (third arg accepted to match the interface).
     await sleep(simLatency(500, 1200));
     const tx = simTx("unlink-shield", batchSecret, usdcToWei(amountUsdc));
     return {
@@ -255,28 +266,46 @@ const realShieldOps: ShieldOps = {
     return acct.getAddress();
   },
 
-  async shieldSender(batchSecret, amountUsdc) {
+  async shieldSender(batchSecret, amountUsdc, walletClient) {
     const { client } = await buildClient(batchSecret);
-    // SHIELD Σ once via the gasless faucet (walletless) — this IS wired. Returns
-    // { tx_id, status } — NOT a TransactionHandle, and the faucet tx is not
-    // pollable, so we surface tx_id as the public-edge marker (no on-chain
-    // explorer hash to link).
-    //
-    // If Σ exceeds the faucet per-call cap, callers must split into ⌈Σ/cap⌉
-    // shieldSender calls. The alternative `depositWithApproval` cap-overflow
-    // fallback (needs a gas-funded sender EOA) is OUT OF SCOPE for the demo path
-    // and is // NOT YET WIRED.
-    const res = await client.faucet.requestPrivateTokens({
+    // SHIELD Σ once via a WALLET-FUNDED deposit of the bridged USDC. The
+    // connected wallet (`walletClient`, on Arc 5042002) signs the ERC-20
+    // approve + the deposit; Unlink's `depositWithApproval` chains them and
+    // returns a TransactionHandle. This is a REAL on-chain edge (unlike the old
+    // gasless faucet), so we get a real tx hash to surface on the public shield
+    // edge. The Unlink account itself is still derived from `batchSecret`
+    // (buildClient) — only the deposit FUNDING comes from the wallet.
+    if (!walletClient) {
+      throw new Error(
+        "[slip] No Arc wallet client for the Unlink deposit — connect a wallet before sending.",
+      );
+    }
+    // Pass an Arc publicClient alongside the walletClient so the deposit's
+    // ERC-20 allowance read (and any eth_call / getCode) goes over a dedicated
+    // Arc RPC transport rather than depending on the injected wallet's transport
+    // — de-risks the approve+deposit on wallets with a flaky/absent read path.
+    const publicClient = createPublicClient({
+      chain: arcTestnet,
+      transport: http(),
+    });
+    const handle = await client.depositWithApproval({
       token: USDC_ADDRESS,
       amount: usdcToWei(amountUsdc),
+      evm: evm.fromViem({ walletClient, publicClient }),
     });
+    const result = await handle.wait();
+    if (result.status !== "processed") {
+      throw new Error(`Unlink deposit not processed: ${result.status}`);
+    }
+    const hash = (result.txHash ?? undefined) as Hex | undefined;
     return {
       kind: "shield",
       label: "Shield batch total into private pool",
       public: true,
-      // The faucet returns an internal tx_id (not an on-chain hash); surface it
-      // as a proofRef so the shield is traceable without faking an explorer link.
-      proofRef: res.tx_id,
+      // depositWithApproval is a real on-chain tx — surface its hash + explorer
+      // link as the public shield edge (the one readable "in" of the bounty).
+      txHash: hash,
+      explorerUrl: hash ? txUrl(hash) : undefined,
       simulated: false,
     };
   },

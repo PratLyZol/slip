@@ -11,19 +11,22 @@
  *      no recipient Arc gas). PLAN §4: CCTP fills the aggregation role. Bridges
  *      the TOTAL ONCE — never per-recipient.
  *
- * Both branch on the GLOBAL demo mode only (no per-adapter flag): demo mode
- * simulates; real mode runs the live bridge and surfaces honest errors.
+ * Real path: the burn is signed by the CONNECTED DYNAMIC WALLET on Base Sepolia
+ * (wallet-signed, client-side via bridgeWithWalletClient). Per the FROZEN
+ * CONTRACT, the engine resolves the Base Sepolia viem WalletClient (chainId
+ * 84532) from the connected wallet and passes it in directly. The server key
+ * (CCTP_PRIVATE_KEY) is no longer used in the bridge path.
+ *
+ * Demo path: deterministic simulation — no credentials, no network.
  */
 
-import type { Address } from "viem";
+import type { Address, WalletClient } from "viem";
 import { getUsdcBalance } from "../adapters/balance";
 import {
-  bridgeViaRoute,
-  getBridgeOps,
+  bridgeWithWalletClient,
   type BridgeToArcParams,
   type BridgeToArcResult,
 } from "../adapters/bridge";
-import { isDemoMode } from "../config";
 import { simLatency, sleep } from "../demo/sim";
 import type { AggregateResult } from "./types";
 
@@ -46,16 +49,31 @@ export async function aggregate(
 /**
  * Aggregate the funds onto Arc via Circle CCTP (the real aggregation leg).
  * Burns Σ on Base Sepolia, mints on Arc, awaits the mint, returns both edges.
- * Throws an honest error in real mode on failure (no silent sim fallback).
+ * The burn is signed by + funded from the connected wallet — no server key, no
+ * simulation. Throws an honest error on failure (never a fake-success fallback).
+ *
+ * FROZEN CONTRACT (the engine programs against this exact shape):
+ *   bridgeToArc(params, walletClient): Promise<BridgeToArcResult>
+ *
+ * @param params       standard bridge params (amountUsdc + recipientAddress).
+ *                     recipientAddress is the connected wallet's Arc address.
+ * @param walletClient the connected wallet's viem WalletClient ALREADY on Base
+ *                     Sepolia (chainId 84532) — the engine resolves it via
+ *                     getWalletClient("84532") (which switches the network) and
+ *                     passes the resolved client. Used to sign + fund the burn.
  */
 export async function bridgeToArc(
   params: BridgeToArcParams,
+  walletClient: WalletClient,
 ): Promise<BridgeToArcResult> {
-  // Real mode in the BROWSER (the send flow runs client-side): bridge-kit +
-  // CCTP_PRIVATE_KEY are server-only, so go through the /api/bridge route. Demo
-  // mode simulates client-side; on the server we call the real adapter directly.
-  if (!isDemoMode() && typeof window !== "undefined") {
-    return bridgeViaRoute(params);
+  // The wallet-signed CCTP burn requires the connected wallet's Base Sepolia
+  // client. A falsy client means no wallet is connected — fail honestly rather
+  // than simulate. (The engine type-guards this too; this is defence in depth.)
+  if (!walletClient) {
+    throw new Error(
+      "[slip] No Base Sepolia wallet client — connect a wallet before sending. The CCTP burn must be signed by the connected wallet.",
+    );
   }
-  return getBridgeOps().bridgeToArc(params);
+
+  return bridgeWithWalletClient(walletClient, params);
 }

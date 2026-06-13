@@ -16,7 +16,7 @@ import {
   mergeNetworks,
 } from "@dynamic-labs/sdk-react-core";
 import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
-import { arcDynamicNetwork } from "@/lib/adapters/arc";
+import { arcDynamicNetwork, baseSepoliaDynamicNetwork } from "@/lib/adapters/arc";
 import { DYNAMIC_ENV_ID } from "@/lib/config";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -31,9 +31,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         environmentId: DYNAMIC_ENV_ID,
         walletConnectors: [EthereumWalletConnectors],
         overrides: {
-          // Merge Arc testnet with any dashboard-configured networks (first arg wins).
+          // Merge Arc testnet + Base Sepolia with any dashboard-configured networks
+          // (first arg wins). Base Sepolia is needed so the embedded wallet can
+          // sign the CCTP burn transaction on the source chain.
           evmNetworks: (networks) =>
-            mergeNetworks([arcDynamicNetwork], networks),
+            mergeNetworks([arcDynamicNetwork, baseSepoliaDynamicNetwork], networks),
         },
       }}
     >

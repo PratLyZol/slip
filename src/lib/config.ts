@@ -54,11 +54,11 @@ export function isDemoMode(): boolean {
 export const DYNAMIC_API_TOKEN = process.env.DYNAMIC_API_TOKEN;
 
 /**
- * Funded Base Sepolia EOA private key (server-only — NEVER bundled to the
- * client). Signs the CCTP burn that aggregates Σ(amounts) from Base Sepolia to
- * Arc testnet. Absent, the bridge leg runs as a deterministic simulation.
+ * NOTE: the CCTP bridge is now WALLET-SIGNED (the connected wallet signs the
+ * burn on Base Sepolia, client-side) — there is no longer a server-held
+ * `CCTP_PRIVATE_KEY`, and the bridge has no env-key gate. See aggregate.ts /
+ * adapters/bridge.ts.
  */
-export const CCTP_PRIVATE_KEY = process.env.CCTP_PRIVATE_KEY;
 
 /**
  * Circle StableFX API key (server-only — NEVER bundled to the client). Drives
@@ -89,15 +89,6 @@ export const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL;
  */
 export function isPregenConfigured(): boolean {
   return !isDemoMode() && !!DYNAMIC_ENV_ID && !!DYNAMIC_API_TOKEN;
-}
-
-/**
- * True when the REAL CCTP bridge path is available: not in demo mode AND a
- * funded Base Sepolia signer key is present. When false, the bridge leg is
- * simulated deterministically.
- */
-export function isBridgeConfigured(): boolean {
-  return !isDemoMode() && !!CCTP_PRIVATE_KEY;
 }
 
 /**

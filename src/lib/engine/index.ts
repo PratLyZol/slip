@@ -6,7 +6,7 @@
  * The batch privacy model (PLAN §2):
  *  - ONE `batchSecret` derives the SENDER's Unlink account.
  *  - Bridge Σ(amounts) onto Arc ONCE (CCTP), then shield Σ ONCE into the sender's
- *    shielded balance (gasless faucet).
+ *    shielded balance (a wallet-funded deposit of the bridged USDC).
  *  - For EACH recipient: a fresh per-recipient `claimSecret` (carried in that
  *    recipient's link) derives that recipient's claim account; a PRIVATE transfer
  *    moves their amount from the sender's shielded balance to their claim account
@@ -164,10 +164,38 @@ export async function runBatchSend(
     });
     throw new Error("No sender wallet connected — connect a wallet before sending.");
   }
-  const bridge = await bridgeToArc({
-    amountUsdc: totalUsdc,
-    recipientAddress: req.senderAddress,
-  });
+  // Resolve the Base Sepolia (84532) wallet client HERE — the engine owns the
+  // wallet seam; bridgeToArc receives a ready WalletClient (frozen contract:
+  // `bridgeToArc(params, walletClient)`). Throw an honest "connect a wallet"
+  // error if it's missing rather than silently routing to a server bridge.
+  if (!req.getWalletClient) {
+    emit({
+      step: EngineStep.Aggregate,
+      status: "failed",
+      detail: "Connect a wallet to sign the CCTP burn on Base Sepolia",
+    });
+    throw new Error("No wallet connected — connect a wallet before sending.");
+  }
+  const baseSepoliaWalletClient = await req.getWalletClient("84532");
+  if (!baseSepoliaWalletClient) {
+    emit({
+      step: EngineStep.Aggregate,
+      status: "failed",
+      detail: "Could not get a Base Sepolia wallet client — allow the network",
+    });
+    throw new Error(
+      "Could not obtain a Base Sepolia wallet client — connect a wallet and allow the Base Sepolia network.",
+    );
+  }
+  const bridge = await bridgeToArc(
+    {
+      amountUsdc: totalUsdc,
+      recipientAddress: req.senderAddress,
+    },
+    // Frozen seam: the engine passes the resolved Base Sepolia WalletClient that
+    // signs the wallet-funded CCTP burn (real mode).
+    baseSepoliaWalletClient,
+  );
   emit({
     step: EngineStep.Aggregate,
     status: "done",
@@ -191,7 +219,8 @@ export async function runBatchSend(
       : `Shared shielded account ${shortAddr(cf.address)}`,
   });
 
-  // Step 4 — Shield Σ ONCE into the sender's shielded balance (gasless faucet).
+  // Step 4 — Shield Σ ONCE into the sender's shielded balance (a wallet-funded
+  // deposit of the bridged USDC, signed on Arc by the connected wallet).
   // This is the single PUBLIC deposit edge the whole batch shares. Degrades
   // safely (PRD §8): on failure we fall back to per-recipient direct settle.
   emit({ step: EngineStep.Shield, status: "running" });
@@ -201,7 +230,21 @@ export async function runBatchSend(
   let skippedReason: string | undefined;
   try {
     senderUnlinkAddress = await ops.senderAddress(batchSecret);
-    shieldLeg = await ops.shieldSender(batchSecret, totalUsdc);
+    // The shield is now a WALLET-FUNDED deposit of the bridged USDC — it needs
+    // the connected wallet's viem client on Arc (5042002) to sign the ERC-20
+    // approve + deposit. Demo ShieldOps ignores it; the real path requires it.
+    if (!req.getWalletClient) {
+      throw new Error(
+        "No wallet connected — connect a wallet to fund the shielded deposit.",
+      );
+    }
+    const arcWalletClient = await req.getWalletClient("5042002");
+    if (!arcWalletClient) {
+      throw new Error(
+        "Could not obtain an Arc wallet client — connect a wallet and allow the Arc network.",
+      );
+    }
+    shieldLeg = await ops.shieldSender(batchSecret, totalUsdc, arcWalletClient);
     privacyEnabled = true;
     emit({
       step: EngineStep.Shield,
