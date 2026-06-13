@@ -71,9 +71,39 @@ export const arcDynamicNetwork = {
   iconUrls: [] as string[],
 };
 
-/** Explorer URL for a transaction hash. */
+// ---------------------------------------------------------------------------
+// CCTP aggregation source chain (Base Sepolia → Arc). Used by the bridge
+// adapter (@circle-fin/bridge-kit). Chain *names* are the bridge-kit ids.
+// ---------------------------------------------------------------------------
+
+/** bridge-kit chain identifiers (string ids, not numeric chainIds). */
+export const CCTP_SOURCE_CHAIN = "Base_Sepolia" as const;
+export const CCTP_DEST_CHAIN = "Arc_Testnet" as const;
+
+/** Base Sepolia (the CCTP burn side). Numeric chain id + RPC for viem. */
+export const BASE_SEPOLIA_CHAIN_ID = 84532;
+export const BASE_SEPOLIA_RPC_URL =
+  process.env.BASE_SEPOLIA_RPC_URL ?? "https://sepolia.base.org";
+
+/** USDC on Base Sepolia (CCTP-burnable). Verified Circle testnet address. */
+export const BASE_SEPOLIA_USDC_ADDRESS: Address =
+  "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
+/**
+ * Base Sepolia block explorer (the CCTP *burn* side). The mint lands on Arc and
+ * uses {@link txUrl}; the burn happens on Base Sepolia and uses this host.
+ * Matches bridge-kit's own BaseSepolia `explorerUrl` template.
+ */
+export const BASE_SEPOLIA_EXPLORER_URL = "https://sepolia.basescan.org";
+
+/** Explorer URL for a transaction hash (Arc). */
 export function txUrl(hash: Hex): string {
   return `${ARC_EXPLORER_URL}/tx/${hash}`;
+}
+
+/** Explorer URL for a Base Sepolia transaction hash (the CCTP burn side). */
+export function baseSepoliaTxUrl(hash: Hex): string {
+  return `${BASE_SEPOLIA_EXPLORER_URL}/tx/${hash}`;
 }
 
 /** Explorer URL for an address. */
