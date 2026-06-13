@@ -15,7 +15,6 @@ import { isEmail, isPhone } from "@/lib/engine/resolve";
 import {
   EngineStep,
   type EngineResult,
-  type Region,
   type StepState,
 } from "@/lib/engine/types";
 import { useWallet } from "./WalletProvider";
@@ -60,7 +59,6 @@ function rowValid(r: Row): boolean {
 export default function SendScreen() {
   const wallet = useWallet();
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
-  const [region, setRegion] = useState<Region>("US");
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [states, setStates] = useState<Partial<Record<EngineStep, StepState>>>(
@@ -100,10 +98,11 @@ export default function SendScreen() {
     try {
       const res = await runBatchSend(
         {
+          // No region here — the recipient's local currency is detected when
+          // THEY open the claim link (lib/region.ts), not picked by the sender.
           recipients: validRows.map((r) => ({
             identifier: r.contact.trim(),
             amountUsd: Number(r.amount),
-            region,
           })),
           senderName: wallet.name,
           senderAddress: wallet.address,
@@ -277,34 +276,13 @@ export default function SendScreen() {
         </button>
       </div>
 
-      {/* Where the recipients are — drives FX into their local money at claim. */}
-      <div className="rise mt-5">
-        <span className="kicker">Where are they?</span>
-        <div className="mt-2.5 flex gap-1 rounded-2xl border border-[var(--hair)] bg-ink-900 p-1">
-          {(["US", "EU"] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setRegion(r)}
-              disabled={running}
-              aria-pressed={region === r}
-              className={`flex-1 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all disabled:opacity-60 ${
-                region === r
-                  ? "bg-ink-700 text-text shadow-[0_1px_0_#f5efe01f_inset]"
-                  : "text-text-faint hover:text-text-dim"
-              }`}
-            >
-              {r === "US" ? "🇺🇸 United States" : "🇪🇺 Europe"}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] text-text-faint">
-          They&apos;ll get their money in{" "}
-          <span className="font-semibold text-text-dim">
-            {region === "EU" ? "euros (EURC)" : "dollars (USDC)"}
-          </span>
-          .
-        </p>
-      </div>
+      {/* Currency is no longer picked here — it's set to the recipient's local
+          money when they claim. */}
+      <p className="rise mt-4 text-center text-[11px] leading-snug text-text-faint">
+        Each recipient gets their{" "}
+        <span className="font-semibold text-text-dim">local currency</span> —
+        converted automatically when they claim, based on where they are.
+      </p>
 
       {error && (
         <p className="animate-slip-rise mt-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-[13px] text-danger">

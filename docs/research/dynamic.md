@@ -217,7 +217,7 @@ Source: https://www.dynamic.xyz/docs/overview/ethglobal-new-york-2026
 
 - **VERIFIED:** You get an `environmentId` by creating an account in the **Dynamic dashboard** (`app.dynamic.xyz`) and copying the environment ID for SDK init. Quoted from ETHGlobal page: *"Create an account in the Dynamic dashboard and grab your environment ID for SDK initialization."* Source: https://www.dynamic.xyz/docs/overview/ethglobal-new-york-2026
 - `environmentId` is a public client-side identifier (safe in `NEXT_PUBLIC_`). (VERIFIED — it's passed into a client component / browser bundle.)
-- **Public demo/sandbox environment ID usable without signup: NOT FOUND / UNVERIFIED.** No official no-signup sandbox environment ID was located. Dynamic docs sometimes use placeholder IDs (`"XXXXX"`, `"YOUR_ENV_ID"`) in examples, but those are placeholders, not working sandbox IDs. **Plan to sign up (free) and create an environment.** Signup is quick and the dashboard provides a default/sandbox environment per project.
+- **Public sandbox environment ID usable without signup: NOT FOUND / UNVERIFIED.** No official no-signup sandbox environment ID was located. Dynamic docs sometimes use placeholder IDs (`"XXXXX"`, `"YOUR_ENV_ID"`) in examples, but those are placeholders, not working sandbox IDs. **Plan to sign up (free) and create an environment.** Signup is quick and the dashboard provides a default/sandbox environment per project.
 
 ---
 

@@ -1,71 +1,123 @@
 "use client";
 
 /**
- * OTP login gate — the recipient confirms it's them before the money is released
- * (spec F3, folds in A3). This is a Dynamic-style email/SMS one-time-code login:
- * "we sent you a code" → enter 6 digits → verifying → claim.
+ * OTP login gate — the recipient confirms it's THEM before the money is released
+ * (spec F3, folds in A3), backed by REAL Dynamic email OTP.
  *
- * Demo mode is first-class: the code is SIMULATED — any 6 digits pass, and the
- * obvious demo code is shown as a hint. No Dynamic SDK call, no credentials.
- * Real Dynamic email/SMS OTP would slot in behind the same callback, gated on
- * NEXT_PUBLIC_DYNAMIC_ENV_ID — but the demo path never depends on it.
+ * Flow: ask for the email FIRST ("what's your email?") → Dynamic sends a real
+ * 6-digit code (useConnectWithOtp().connectWithEmail) → enter the code →
+ * verifyOneTimePassword logs the user into their Dynamic embedded wallet → we
+ * hand the logged-in wallet address back up so ClaimScreen can enforce that it
+ * matches the intended recipient.
+ *
+ * VERIFIED SDK surface (node_modules/@dynamic-labs/sdk-react-core@4.88.5):
+ *   - useConnectWithOtp() -> IConnectWithOtpContext with:
+ *       connectWithEmail(email: string, options?) => Promise<void>      // sends code
+ *       verifyOneTimePassword(code: string, options?) => Promise<VerifyResponse|void>
+ *     (src/lib/context/ConnectWithOtpContext/types.d.ts lines 23–30)
+ *   - useUserWallets() (exported as useUserWalletsExternal) => Wallet[]; each
+ *     Wallet has `address: string` (wallet-connector-core Wallet.d.ts line 18).
+ *   Both hooks use createProviderHook → they THROW outside <DynamicContextProvider>.
+ *   Providers.tsx only mounts the provider when NEXT_PUBLIC_DYNAMIC_ENV_ID is set,
+ *   so the hook-using component is ONLY rendered when DYNAMIC_ENV_ID is present.
  *
  * Money words only: the recipient is "confirming it's you to claim your money",
  * never "logging into a wallet". The verb is identity, not crypto.
  */
 
-import { useRef, useState } from "react";
-import { isDemoMode } from "@/lib/config";
+import { useState } from "react";
+import {
+  useConnectWithOtp,
+  useUserWallets,
+} from "@dynamic-labs/sdk-react-core";
+import { DYNAMIC_ENV_ID } from "@/lib/config";
 
-/** The simulated code surfaced as a hint in demo mode. Any 6 digits also pass. */
-const DEMO_CODE = "123456";
 const CODE_LENGTH = 6;
 
-type Channel = "email" | "sms";
-
 interface Props {
-  /** Verified — proceed to the actual claim. */
-  onVerified: () => void;
+  /**
+   * Verified — the recipient passed real OTP. `walletAddress` is the address of
+   * the Dynamic embedded wallet they just logged into; ClaimScreen compares it
+   * (case-insensitively) to payload.recipientAddress before running the claim.
+   */
+  onVerified: (walletAddress: string) => void;
 }
 
 export default function OtpLogin({ onVerified }: Props) {
-  const demo = isDemoMode();
-  const [channel, setChannel] = useState<Channel>("email");
+  // Dynamic is only mounted when an env id is present (Providers.tsx). Without
+  // it there's no backend to send/verify a real code — never fake-accept.
+  if (!DYNAMIC_ENV_ID) {
+    return <OtpUnavailable />;
+  }
+  return <OtpLoginDynamic onVerified={onVerified} />;
+}
+
+/** The real Dynamic email-OTP flow. Only rendered inside DynamicContextProvider. */
+function OtpLoginDynamic({ onVerified }: Props) {
+  const { connectWithEmail, verifyOneTimePassword } = useConnectWithOtp();
+  const userWallets = useUserWallets();
+
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  const ready = code.length === CODE_LENGTH;
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const codeReady = code.length === CODE_LENGTH;
 
   function onCodeChange(raw: string) {
-    // Numeric only, capped at the code length.
-    const next = raw.replace(/\D/g, "").slice(0, CODE_LENGTH);
-    setCode(next);
+    setCode(raw.replace(/\D/g, "").slice(0, CODE_LENGTH));
     if (error) setError(null);
   }
 
+  async function sendCode() {
+    if (!emailValid || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      // Triggers a REAL Dynamic OTP email to the address.
+      await connectWithEmail(email.trim());
+      setStep("code");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Couldn't send the code. Check the email and try again.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function verify() {
-    if (!ready || verifying) return;
+    if (!codeReady || verifying) return;
     setVerifying(true);
     setError(null);
+    try {
+      // Verifies the code and logs the user into their Dynamic embedded wallet.
+      await verifyOneTimePassword(code);
 
-    // Simulated verification with realistic latency. In demo every 6-digit code
-    // is accepted — the gate is a confidence-building step, not a real auth wall.
-    await new Promise((r) => setTimeout(r, 850 + Math.random() * 600));
-
-    if (demo) {
-      onVerified();
-      return;
+      // After verify, read the logged-in wallet. The same-email enforcement
+      // (wallet === payload.recipientAddress) happens up in ClaimScreen.
+      const address = userWallets[0]?.address;
+      if (!address) {
+        setError(
+          "We couldn't confirm your account. Please try the code again.",
+        );
+        return;
+      }
+      onVerified(address);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "That code didn't match. Check it and try again.",
+      );
+    } finally {
+      setVerifying(false);
     }
-
-    // NOT YET WIRED — real Dynamic email/SMS OTP verification. Without a Dynamic
-    // env id there's no backend to verify against, so we never reach here in the
-    // demo build. Kept honest: simulate-and-proceed with a console warning.
-    console.warn(
-      "[slip] real Dynamic OTP verification not wired — accepting code.",
-    );
-    onVerified();
   }
 
   return (
@@ -99,84 +151,138 @@ export default function OtpLogin({ onVerified }: Props) {
       <h1 className="serif rise mt-5 text-[26px] leading-tight">
         Let&apos;s confirm it&apos;s you
       </h1>
-      <p className="rise mt-3 max-w-[300px] text-[14px] text-text-dim">
-        We sent a 6-digit code to claim your money. Enter it below to release the
-        funds to you.
-      </p>
 
-      {/* Channel toggle — email / SMS, the way a login screen offers both. */}
-      <div className="rise mt-6 inline-flex rounded-full border border-[var(--hair)] bg-ink-900/40 p-1 text-[13px]">
-        {(["email", "sms"] as const).map((c) => (
+      {step === "email" ? (
+        <>
+          <p className="rise mt-3 max-w-[300px] text-[14px] text-text-dim">
+            What&apos;s your email? We&apos;ll send a 6-digit code to make sure
+            the money reaches you.
+          </p>
+
+          <div className="card rise mt-6 w-full p-5">
+            <label htmlFor="otp-email" className="kicker mb-3 block text-left">
+              Your email
+            </label>
+            <input
+              id="otp-email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (error) setError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendCode();
+              }}
+              disabled={sending}
+              inputMode="email"
+              autoComplete="email"
+              aria-label="Your email address"
+              placeholder="you@example.com"
+              className="focus-volt w-full rounded-xl border border-[var(--hair)] bg-ink-950/60 px-4 py-3 text-[16px] text-text placeholder:text-text-faint disabled:opacity-60"
+            />
+
+            {error && (
+              <p className="mt-3 text-left text-[12px] text-danger">{error}</p>
+            )}
+          </div>
+
+          <div className="flex-1" />
+
           <button
-            key={c}
-            type="button"
-            onClick={() => setChannel(c)}
-            disabled={verifying}
-            className={`rounded-full px-4 py-1.5 font-medium transition-colors disabled:opacity-60 ${
-              channel === c
-                ? "bg-volt text-[#07130b]"
-                : "text-text-faint hover:text-text-dim"
-            }`}
+            onClick={sendCode}
+            disabled={!emailValid || sending}
+            className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {c === "email" ? "Email" : "Text"}
+            {sending ? "Sending code…" : "Send me a code"}
           </button>
-        ))}
-      </div>
+        </>
+      ) : (
+        <>
+          <p className="rise mt-3 max-w-[300px] text-[14px] text-text-dim">
+            We sent a 6-digit code to{" "}
+            <span className="font-semibold text-text">{email.trim()}</span>.
+            Enter it below to release the funds to you.
+          </p>
 
-      <div className="card rise mt-6 w-full p-5">
-        <label htmlFor="otp-code" className="kicker mb-3 block text-left">
-          {channel === "email" ? "Code from your email" : "Code from your text"}
-        </label>
-        <input
-          id="otp-code"
-          ref={inputRef}
-          value={code}
-          onChange={(e) => onCodeChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") verify();
-          }}
-          disabled={verifying}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          aria-label="6-digit confirmation code"
-          placeholder="••••••"
-          className="focus-volt amount-figure w-full rounded-xl border border-[var(--hair)] bg-ink-950/60 px-4 py-3 text-center text-[28px] tracking-[0.5em] text-text placeholder:text-text-faint disabled:opacity-60"
-        />
+          <div className="card rise mt-6 w-full p-5">
+            <label htmlFor="otp-code" className="kicker mb-3 block text-left">
+              Code from your email
+            </label>
+            <input
+              id="otp-code"
+              value={code}
+              onChange={(e) => onCodeChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") verify();
+              }}
+              disabled={verifying}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              aria-label="6-digit confirmation code"
+              placeholder="••••••"
+              autoFocus
+              className="focus-volt amount-figure w-full rounded-xl border border-[var(--hair)] bg-ink-950/60 px-4 py-3 text-center text-[28px] tracking-[0.5em] text-text placeholder:text-text-faint disabled:opacity-60"
+            />
 
-        {error && (
-          <p className="mt-3 text-left text-[12px] text-danger">{error}</p>
-        )}
+            {error && (
+              <p className="mt-3 text-left text-[12px] text-danger">{error}</p>
+            )}
 
-        {demo && (
-          <p className="mt-3 text-left text-[12px] text-text-faint">
-            Demo code:{" "}
             <button
               type="button"
               onClick={() => {
-                setCode(DEMO_CODE);
-                inputRef.current?.focus();
+                setStep("email");
+                setCode("");
+                setError(null);
               }}
               disabled={verifying}
-              className="font-mono text-cool underline-offset-2 hover:underline disabled:no-underline"
+              className="mt-3 text-left text-[12px] text-cool underline-offset-2 hover:underline disabled:no-underline"
             >
-              {DEMO_CODE}
-            </button>{" "}
-            — or type any six digits.
-          </p>
-        )}
-      </div>
+              Use a different email
+            </button>
+          </div>
 
-      <div className="flex-1" />
+          <div className="flex-1" />
 
-      <button
-        onClick={verify}
-        disabled={!ready || verifying}
-        className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {verifying ? "Verifying…" : "Confirm and claim"}
-      </button>
+          <button
+            onClick={verify}
+            disabled={!codeReady || verifying}
+            className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {verifying ? "Verifying…" : "Confirm and claim"}
+          </button>
+        </>
+      )}
+
       <p className="mt-3 text-[12px] leading-snug text-text-faint">
-        This is just to make sure the money reaches you — no password, no wallet.
+        This is just to make sure the money reaches you — no password.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Honest fallback when Dynamic isn't configured (no NEXT_PUBLIC_DYNAMIC_ENV_ID).
+ * There's no real OTP backend, so we DO NOT proceed — never fake-accept a code.
+ */
+function OtpUnavailable() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center text-center">
+      <span className="grid h-14 w-14 place-items-center rounded-full border border-danger/40 bg-danger/10 text-danger">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 8v5m0 3h.01"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </span>
+      <h1 className="serif mt-4 text-[24px]">Sign-in unavailable</h1>
+      <p className="mt-2 max-w-[280px] text-[14px] text-text-dim">
+        We can&apos;t confirm it&apos;s you right now — email sign-in isn&apos;t
+        configured. Please try again later.
       </p>
     </div>
   );

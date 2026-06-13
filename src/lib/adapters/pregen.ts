@@ -71,7 +71,25 @@ function identifierType(identifier: string): IdentifierType {
   return "email";
 }
 
-/** Build the Dynamic request body for an identifier, picking email vs phone. */
+/**
+ * Build the Dynamic request body for an identifier, picking email vs phone.
+ *
+ * HONESTY NOTE (verified 2026-06-13 against the installed SDK + docs/research/
+ * dynamic.md §3): the EXACT server-side `waas/create` REST request/response
+ * shape is NOT verified. The installed `@dynamic-labs/*` 4.88.5 line is a React
+ * CLIENT SDK — its closest endpoints (`SDKApi.createWaasAccount`, request model
+ * `CreateWaasAccountRequest { chain, clientKeygenIds, … }`, and
+ * `createEmbeddedWallets`) are MPC/TSS client-keygen or authenticated-user
+ * flows, NOT a server-only "pregen an address for this email/phone" call. The
+ * server REST pregen endpoint (Bearer `dyn_…`) is the Dynamic Dashboard API,
+ * whose body docs §3 marks UNVERIFIED. So this body (`{ identifier, type,
+ * chains }`) is a BEST-EFFORT guess. That is SAFE here because: (1) the real
+ * path only runs when DYNAMIC_API_TOKEN is present and throws otherwise (it
+ * never fabricates an address), and (2) {@link parsePregenAddress} only returns
+ * an address that the live API actually sent back — a wrong body yields a
+ * non-OK response → an honest throw, never a fake address. Confirm the exact
+ * body via the Dynamic docs MCP before relying on the real path in production.
+ */
 function pregenRequestBody(identifier: string): Record<string, unknown> {
   const type = identifierType(identifier);
   const value = identifier.trim();

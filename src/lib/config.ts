@@ -92,6 +92,25 @@ export function isPregenConfigured(): boolean {
 }
 
 /**
+ * CRITICAL SAFETY GATE (Task #2). True only when the recipient's payout address
+ * is guaranteed to be a REAL, OTP-claimable wallet — i.e. when the real Dynamic
+ * pregen path is configured ({@link isPregenConfigured}).
+ *
+ * When this is FALSE, the only payout address the pregen route can produce is
+ * the deterministic `demoAddressFor(identifier)` — a KEYLESS address nobody
+ * controls. Sending REAL shielded USDC there means the funds are lost forever.
+ * The real Unlink unshield/withdraw MUST refuse unless this returns true (see
+ * adapters/unlink.ts `unshield` + engine/claim.ts). This is the single source
+ * of truth for "is it safe to send real funds to the recipient address?".
+ *
+ * It is deliberately INDEPENDENT of whether Unlink itself is configured: even a
+ * fully-real Unlink withdraw must never fire to a keyless demo recipient.
+ */
+export function isRealPayoutSafe(): boolean {
+  return isPregenConfigured();
+}
+
+/**
  * True when the REAL StableFX path is available: not in demo mode AND a Circle
  * StableFX key is present. When false, FX cascades to Swap Kit then the sim.
  */

@@ -53,7 +53,13 @@
 
 import { account, createUnlinkClient, evm } from "@unlink-xyz/sdk/browser";
 import { createPublicClient, http, keccak256, type Hex, type WalletClient } from "viem";
-import { UNLINK_APP_ID, UNLINK_API_KEY, isDemoMode, isUnlinkConfigured } from "../config";
+import {
+  UNLINK_APP_ID,
+  UNLINK_API_KEY,
+  isDemoMode,
+  isUnlinkConfigured,
+  isRealPayoutSafe,
+} from "../config";
 import { simLatency, simTx, sleep, fakeTxHash } from "../demo/sim";
 import { UNLINK_ARC_ENVIRONMENT, USDC_ADDRESS, arcTestnet, txUrl } from "./arc";
 import type { PrivacyLeg } from "../engine/types";
@@ -202,6 +208,10 @@ const demoShieldOps: ShieldOps = {
 
   async unshield(claimSecret, recipientEvmAddress, amountUsdc) {
     // PUBLIC edge: a visible withdraw tx to the recipient EOA.
+    const shieldedAddress = demoUnlinkAddress(claimSecret, "claim");
+    console.log(
+      `[slip] unshield (demo): shielded ${shieldedAddress} → ${recipientEvmAddress} (${amountUsdc} USDC)`,
+    );
     await sleep(simLatency(500, 1200));
     const tx = simTx("unlink-withdraw", claimSecret, recipientEvmAddress, usdcToWei(amountUsdc));
     return {
@@ -334,7 +344,28 @@ const realShieldOps: ShieldOps = {
   },
 
   async unshield(claimSecret, recipientEvmAddress, amountUsdc) {
-    const { client } = await buildClient(claimSecret);
+    // ───────────────────────────────────────────────────────────────────────
+    // CRITICAL SAFETY GUARD (Task #2). This is the moment REAL shielded USDC
+    // leaves the private pool to a PUBLIC address. If the recipient address is
+    // not a verified-real, OTP-claimable Dynamic pregen wallet, it is the
+    // deterministic `demoAddressFor(identifier)` — a KEYLESS address nobody
+    // controls — and the funds would be LOST FOREVER. Refuse outright; the
+    // caller (engine/claim.ts) catches and degrades to a labeled simulation so
+    // the claim still completes without burning real money. NEVER weaken this
+    // to "best effort": a missing Dynamic pregen config means we CANNOT prove
+    // the recipient owns the address, so we must NOT send real funds there.
+    if (!isRealPayoutSafe()) {
+      throw new Error(
+        "[slip] Refusing real Unlink withdraw: recipient payout address is not a " +
+          "verified-real Dynamic pregen wallet (DYNAMIC_API_TOKEN absent → keyless " +
+          "demo address). Real funds must never go to a keyless address. " +
+          "Staying simulated.",
+      );
+    }
+    const { client, unlinkAddress } = await buildClient(claimSecret);
+    console.log(
+      `[slip] unshield: shielded ${unlinkAddress} → ${recipientEvmAddress} (${amountUsdc} USDC)`,
+    );
     const handle = await client.withdraw({
       recipientEvmAddress,
       token: USDC_ADDRESS,
