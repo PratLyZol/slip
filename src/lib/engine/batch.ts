@@ -2,10 +2,15 @@
  * Batch payout parsing + run logic (PRD Phase 5, Surface B).
  *
  * Paste a list of `name, amount[, region]` rows (CSV with an optional header is
- * accepted too). Each VALID row runs the SAME single-send engine ({@link runSend})
- * — independent claim secret, independent claim link. Payees never see each
- * other: every link carries ONLY its own payload (true by construction — the
- * claim fragment is built from a single row's EngineResult).
+ * accepted too). All VALID rows run through the engine as ONE batch fan-out
+ * ({@link runBatchSend}): a single Σ shield into the sender's private pool, then
+ * N private transfers — one per recipient — to N independent claim accounts.
+ * That shared single deposit is what makes the batch's unlinkability
+ * self-contained (PLAN §1), NOT N separate single-sends.
+ *
+ * Each recipient still gets an INDEPENDENT claim secret + claim link, and payees
+ * never see each other: every link carries ONLY its own payload (true by
+ * construction — each fragment is built from one recipient's EngineResult).
  *
  * No DB (AGENTS.md / PRD §7). Batch state is React state; the page persists the
  * last batch to localStorage so a refresh doesn't eat the demo.
@@ -14,7 +19,7 @@
  * is trivial): split on newlines, split each line on commas, trim, coerce.
  */
 
-import { runSend } from "./index";
+import { runBatchSend } from "./index";
 import { buildClaimUrl } from "./claimLink";
 import { sentReceiptFromResult, saveSentReceipt } from "./sentStore";
 import type { EngineResult, Region, SendRequest } from "./types";
@@ -130,67 +135,97 @@ export function rowToSendRequest(row: BatchRow, senderName?: string): SendReques
   };
 }
 
+/** Build ONE SendRequest covering all rows — the batch fan-out (a single Σ shield). */
+export function rowsToSendRequest(rows: BatchRow[], senderName?: string): SendRequest {
+  return {
+    recipients: rows.map((r) => ({
+      identifier: r.name,
+      amountUsd: r.amount,
+      region: r.region,
+    })),
+    senderName,
+  };
+}
+
 /**
- * Run the engine over many rows with bounded concurrency so the per-row step
- * animation stays legible (PRD: "sequentially or small-concurrency 2-3 at a
- * time"). Each row is independent — its own secret, its own link.
+ * Run all valid rows as ONE batch fan-out ({@link runBatchSend}): one shared Σ
+ * shield into the sender's private pool, then N private transfers to N
+ * independent claim accounts. This is what realises the single-deposit
+ * unlinkability property (PLAN §1) — it is NOT N separate single-sends.
  *
- * @param rows        the VALID rows to run
+ * Because the batch is one shared engine run, rows advance as a GROUP
+ * (resolving → shielding → ready), and if the shared fan-out throws the batch
+ * fails as a unit. Each recipient still gets its own secret + isolated claim link
+ * (built from its own EngineResult).
+ *
+ * @param rows        the VALID rows to run (result order matches row order)
  * @param origin      window.location.origin, for absolute claim URLs
  * @param senderName  optional sender display name embedded in each link
  * @param onUpdate    fired whenever a row's status/result changes (live UI)
- * @param concurrency max rows in flight at once (default 3)
+ * @param _concurrency accepted for call-site compatibility; the batch now runs as
+ *                     a single fan-out, so there is no per-row concurrency.
  */
 export async function runBatch(
   rows: BatchRow[],
   origin: string,
   senderName: string | undefined,
   onUpdate: (row: BatchResultRow) => void,
-  concurrency = 3,
+  _concurrency = 3,
 ): Promise<BatchResultRow[]> {
   const out: BatchResultRow[] = rows.map((row) => ({ row, status: "pending" }));
+  if (rows.length === 0) return out;
 
-  // Index queue consumed by a fixed pool of workers.
-  let next = 0;
-  async function worker() {
-    for (;;) {
-      const i = next++;
-      if (i >= rows.length) return;
-      const row = rows[i];
+  // The fan-out is ONE engine run with a SHARED step stream, so rows move
+  // together. Advance every not-yet-terminal row to a coarse phase.
+  const setAll = (status: BatchRowStatus) => {
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].status === "ready" || out[i].status === "failed") continue;
+      out[i] = { ...out[i], status };
+      onUpdate(out[i]);
+    }
+  };
 
-      const emit = (patch: Partial<BatchResultRow>) => {
-        out[i] = { ...out[i], ...patch };
+  setAll("resolving");
+
+  try {
+    const results = await runBatchSend(
+      rowsToSendRequest(rows, senderName),
+      (s) => {
+        // Coarse phase from the shared steps: the single Σ deposit + the private
+        // transfers are the "shielding" phase; resolution is "resolving".
+        if (s.status !== "running") return;
+        if (s.step === "shield" || s.step === "settle") setAll("shielding");
+        else if (s.step === "resolve") setAll("resolving");
+      },
+    );
+
+    // Map each EngineResult back to its row (same order) → ready + claim link.
+    for (let i = 0; i < out.length; i++) {
+      const result = results[i];
+      if (!result) {
+        out[i] = { ...out[i], status: "failed", error: "No result for this row." };
         onUpdate(out[i]);
-      };
-
-      emit({ status: "resolving" });
-      try {
-        const result = await runSend(
-          rowToSendRequest(row, senderName),
-          (s) => {
-            // Surface a coarse phase from the engine's fine-grained steps.
-            if (s.step === "shield" || s.step === "settle") {
-              if (out[i].status !== "ready") emit({ status: "shielding" });
-            }
-          },
-        );
-        // Persist the send-side artifacts so /private can read any batch row too.
-        saveSentReceipt(result.secret, sentReceiptFromResult(result));
-        const claimUrl = origin
-          ? buildClaimUrl(result.claimPayload, origin)
-          : undefined;
-        emit({ status: "ready", result, claimUrl });
-      } catch (e) {
-        emit({
-          status: "failed",
-          error: e instanceof Error ? e.message : "Send failed",
-        });
+        continue;
       }
+      // Persist the send-side artifacts so /private can read any batch row too.
+      saveSentReceipt(result.secret, sentReceiptFromResult(result));
+      const claimUrl = origin
+        ? buildClaimUrl(result.claimPayload, origin)
+        : undefined;
+      out[i] = { ...out[i], status: "ready", result, claimUrl };
+      onUpdate(out[i]);
+    }
+  } catch (e) {
+    // One Σ shield underlies the whole batch — if the shared fan-out throws, the
+    // batch fails as a unit (mark every not-yet-ready row failed).
+    const error = e instanceof Error ? e.message : "Batch send failed";
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].status === "ready") continue;
+      out[i] = { ...out[i], status: "failed", error };
+      onUpdate(out[i]);
     }
   }
 
-  const pool = Array.from({ length: Math.max(1, concurrency) }, () => worker());
-  await Promise.all(pool);
   return out;
 }
 
