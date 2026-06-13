@@ -18,7 +18,7 @@ import {
   useUserWallets,
 } from "@dynamic-labs/sdk-react-core";
 import { DYNAMIC_ENV_ID } from "@/lib/config";
-import { getUsdcBalance } from "@/lib/adapters/balance";
+import { getUsdcBalanceByChain, type ChainUsdc } from "@/lib/adapters/balance";
 import { formatAmount, shortAddress } from "@/lib/format";
 
 export default function WalletConnect() {
@@ -46,25 +46,33 @@ function DynamicConnect() {
   const isLoggedIn = useIsLoggedIn();
   const wallets = useUserWallets();
   const address = wallets[0]?.address as Address | undefined;
-  const [balanceUsdc, setBalanceUsdc] = useState<number | null>(null);
+  const [byChain, setByChain] = useState<ChainUsdc[] | null>(null);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!address) return;
+    if (!address) {
+      setByChain(null);
+      return;
+    }
     let cancelled = false;
-    getUsdcBalance(address)
+    getUsdcBalanceByChain(address)
       .then((b) => {
-        if (!cancelled) setBalanceUsdc(b);
+        if (!cancelled) setByChain(b);
       })
       .catch(() => {
-        if (!cancelled) setBalanceUsdc(null);
+        if (!cancelled) setByChain(null);
       });
     return () => {
       cancelled = true;
     };
   }, [address]);
+
+  // Total across CCTP testnets + the chains that actually hold funds.
+  const balanceUsdc =
+    byChain === null ? null : byChain.reduce((sum, c) => sum + c.usdc, 0);
+  const funded = (byChain ?? []).filter((c) => c.usdc > 0);
 
   // Close the details popover on outside-click / Escape.
   useEffect(() => {
@@ -138,10 +146,35 @@ function DynamicConnect() {
           <p className="select-all break-all font-mono text-[12.5px] leading-relaxed text-text">
             {address}
           </p>
-          {balanceUsdc !== null && (
+          {funded.length > 0 ? (
+            <div className="mt-3">
+              <p className="kicker mb-1">USDC by chain</p>
+              <ul className="flex flex-col gap-1">
+                {funded.map((c) => (
+                  <li
+                    key={c.key}
+                    className="flex justify-between text-[11.5px]"
+                  >
+                    <span className="text-text-dim">{c.name}</span>
+                    <span className="font-medium text-text">
+                      ${formatAmount(c.usdc)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 flex justify-between border-t border-[var(--hair)] pt-1.5 text-[11.5px]">
+                <span className="text-text-faint">Total</span>
+                <span className="font-semibold text-volt">
+                  ${formatAmount(balanceUsdc ?? 0)}
+                </span>
+              </p>
+            </div>
+          ) : balanceUsdc !== null ? (
             <p className="mt-2 text-[11px] text-text-faint">
-              Balance ${formatAmount(balanceUsdc)} USDC
+              No USDC found across CCTP testnets.
             </p>
+          ) : (
+            <p className="mt-2 text-[11px] text-text-faint">Loading balance…</p>
           )}
           <div className="mt-3 flex gap-2">
             <button

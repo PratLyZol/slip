@@ -141,7 +141,9 @@ export async function runBatchSend(
   // the REAL aggregation — a Circle CCTP bridge of Σ ONCE (burn on Base Sepolia,
   // mint on Arc, forwarder mode). PLAN §4: CCTP genuinely IS "aggregation" here.
   emit({ step: EngineStep.Aggregate, status: "running" });
-  const agg = await aggregate(total);
+  // Check the sender's USDC across all CCTP chains (not just Arc) — the funds are
+  // bridged from whichever testnet holds them, so an Arc-only check is wrong.
+  const agg = await aggregate(total, req.senderAddress);
   if (!agg.sufficient) {
     emit({
       step: EngineStep.Aggregate,
