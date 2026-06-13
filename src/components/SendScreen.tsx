@@ -9,9 +9,15 @@
  * link per recipient.
  */
 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { runBatchSend } from "@/lib/engine";
 import { useCallback, useMemo, useState } from "react";
 import { runBatchSend, buildClaimUrl } from "@/lib/engine";
 import { isEmail, isPhone } from "@/lib/engine/resolve";
+import {
+  cctpSourceByChainId,
+  supportedOriginChainNames,
+} from "@/lib/adapters/cctp-chains";
 import {
   EngineStep,
   type EngineResult,
@@ -68,13 +74,65 @@ export default function SendScreen() {
   const [sentRows, setSentRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // The wallet's connected ORIGIN chain — the chain the CCTP burn is signed on.
+  // We read it LIVE (the embedded connector binds the client to the active
+  // network) and require a CCTP-supported source before any send.
+  const [netChainId, setNetChainId] = useState<number | undefined>(
+    wallet.chainId,
+  );
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    if (!wallet.address) {
+      setNetChainId(undefined);
+      return;
+    }
+    let cancelled = false;
+    wallet
+      .getNetwork()
+      .then((id) => {
+        if (!cancelled) setNetChainId(id);
+      })
+      .catch(() => {
+        if (!cancelled) setNetChainId(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-read whenever the wallet or its active chain changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet.address, wallet.chainId]);
+
+  const originSource = cctpSourceByChainId(netChainId);
+  const onSupportedNetwork = Boolean(originSource);
+  const wrongNetwork =
+    Boolean(wallet.address) && netChainId !== undefined && !onSupportedNetwork;
+
+  async function switchToBaseSepolia() {
+    setSwitching(true);
+    setError(null);
+    try {
+      await wallet.switchNetwork(84532);
+      setNetChainId(84532);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Couldn't switch network. Try again.",
+      );
+    } finally {
+      setSwitching(false);
+    }
+  }
+
   const validRows = useMemo(() => rows.filter(rowValid), [rows]);
   const total = useMemo(
     () => validRows.reduce((sum, r) => sum + Number(r.amount), 0),
     [validRows],
   );
   const canSend =
-    phase === "idle" && Boolean(wallet.address) && validRows.length > 0;
+    phase === "idle" &&
+    Boolean(wallet.address) &&
+    validRows.length > 0 &&
+    onSupportedNetwork;
 
   const onStep = useCallback((s: StepState) => {
     setStates((prev) => ({ ...prev, [s.step]: s }));
@@ -106,8 +164,10 @@ export default function SendScreen() {
           })),
           senderName: wallet.name,
           senderAddress: wallet.address,
+          // The wallet's connected origin chain — the CCTP burn source.
+          originChainId: netChainId,
           // Inject the wallet client getter so the engine's aggregate step can
-          // obtain a Base Sepolia WalletClient for the wallet-signed CCTP burn.
+          // obtain the ORIGIN-chain WalletClient for the wallet-signed CCTP burn.
           getWalletClient: wallet.getWalletClient,
         },
         onStep,
@@ -189,7 +249,9 @@ export default function SendScreen() {
         </div>
         <p className="amount-figure mt-3 text-[12px] text-text-faint">
           {wallet.balanceUsdc !== null
-            ? `Balance $${formatAmount(wallet.balanceUsdc)} USDC`
+            ? `Balance $${formatAmount(wallet.balanceUsdc)} USDC${
+                originSource ? ` on ${originSource.name}` : ""
+              }`
             : "Connect a wallet to load balance"}
         </p>
       </div>
@@ -322,6 +384,26 @@ export default function SendScreen() {
 
       <div className="flex-1" />
 
+      {/* Wrong-network guard — block sending until the wallet is on a CCTP
+          source chain; offer a one-tap switch to Base Sepolia. */}
+      {wrongNetwork && (
+        <div className="rise mt-6 rounded-2xl border border-danger/40 bg-danger/[0.06] p-4 text-left">
+          <p className="text-[13px] font-semibold text-danger">Wrong network</p>
+          <p className="mt-1 text-[12px] text-text-dim">
+            Your wallet is on a chain we can&apos;t send from. Switch to a
+            supported network ({supportedOriginChainNames()}).
+          </p>
+          <button
+            type="button"
+            onClick={switchToBaseSepolia}
+            disabled={switching}
+            className="focus-volt mt-3 w-full rounded-xl bg-volt px-3 py-2.5 text-[13px] font-bold text-ink-950 transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {switching ? "Switching…" : "Switch to Base Sepolia"}
+          </button>
+        </div>
+      )}
+
       {/* Send button */}
       <button
         onClick={handleSend}
@@ -332,9 +414,11 @@ export default function SendScreen() {
           ? "Sending…"
           : !wallet.address
             ? "Connect a wallet to send"
-            : validRows.length <= 1
-              ? `Send ${total > 0 ? formatUsd(total) : ""}`.trim()
-              : `Send ${formatUsd(total)} to ${validRows.length} people`}
+            : wrongNetwork
+              ? "Switch to a supported network"
+              : validRows.length <= 1
+                ? `Send ${total > 0 ? formatUsd(total) : ""}`.trim()
+                : `Send ${formatUsd(total)} to ${validRows.length} people`}
       </button>
     </div>
   );

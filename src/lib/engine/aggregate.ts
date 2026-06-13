@@ -37,9 +37,11 @@ import type { AggregateResult } from "./types";
 export async function aggregate(
   amountUsd: number,
   senderAddress?: Address,
+  originChainId?: number,
 ): Promise<AggregateResult> {
   await sleep(simLatency(400, 900));
-  const availableUsdc = await getUsdcBalance(senderAddress);
+  // Read the wallet's USDC on its connected origin chain (the CCTP burn source).
+  const availableUsdc = await getUsdcBalance(senderAddress, originChainId);
   return {
     availableUsdc,
     sufficient: availableUsdc + 1e-9 >= amountUsd,

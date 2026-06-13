@@ -8,12 +8,18 @@ export interface WalletState {
   name: string;
   /** Connected wallet address, if any. */
   address?: Address;
+  /** The wallet's currently-connected EVM chain id (the CCTP burn origin). */
+  chainId?: number;
   /** USDC balance in human units, or null while loading. */
   balanceUsdc: number | null;
   /** Open the wallet connect flow. */
   login: () => void;
   /** Disconnect the wallet. */
   logout: () => void;
+  /** Read the wallet's current network chain id (does NOT switch). */
+  getNetwork: () => Promise<number | undefined>;
+  /** Switch the wallet's active network to `chainId`. */
+  switchNetwork: (chainId: number) => Promise<void>;
   /**
    * Obtain a viem WalletClient for the requested chain from the connected
    * Dynamic wallet. Returns `undefined` when no wallet is connected or the
