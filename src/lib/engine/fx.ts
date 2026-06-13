@@ -11,9 +11,10 @@
  *
  * Constraints the Phase 4 agent inherits (from docs/research/arc.md):
  *  - StableFX requires a Circle-issued API key — it is NOT a permissionless
- *    on-chain swap. The real adapter must be flag-gated; demo simulates the
- *    quote + settle. So the real branch here belongs behind isDemoMode()/a key
- *    check, exactly like settle.ts.
+ *    on-chain swap. Selection is on the GLOBAL isDemoMode() ONLY (user
+ *    directive: NO per-adapter flag). Demo simulates the quote + settle; real
+ *    mode runs the real StableFX REST flow via the /api/fx route (so the key +
+ *    taker signing key stay server-side).
  *  - EU → EURC, everywhere else → USDC. EURC is 6-decimal on Arc.
  *  - All legs stay on Arc testnet (no bridge hop).
  */
@@ -21,7 +22,6 @@
 import { keccak256 } from "viem";
 import { isDemoMode } from "../config";
 import { simLatency, simTx, sleep } from "../demo/sim";
-import { recipientAddressFromSecret } from "./counterfactual";
 import type { FxResult, Region } from "./types";
 import type { Hex } from "viem";
 
@@ -88,18 +88,61 @@ export async function fxAtClaim(
     };
   }
 
-  // NOT YET WIRED — real Circle StableFX conversion.
-  // Real path (flag-gated): request a USDC→EURC quote via the StableFX API
-  // (requires a Circle-issued key per docs/research/arc.md — StableFX is NOT a
-  // permissionless on-chain swap), accept it, and let FxEscrow settle on Arc to
-  // the recipient account (recipientAddressFromSecret(secret)). Return the quoted
-  // EURC `amount`, the `rateUsed`, and the settlement `txHash`. Without a Circle
-  // key there is no RFQ counterparty, so we fall back to a labeled 1:1
-  // pass-through (honest) rather than fabricating a "real" rate. Referenced here
-  // so the seam (recipient destination) is visible to the real adapter:
-  void recipientAddressFromSecret;
-  console.warn(
-    "[slip] real FX (StableFX) needs a Circle API key — passing USDC through as EURC 1:1.",
-  );
-  return { token, amount: amountUsdc, rateUsed: 1 };
+  // REAL — Circle StableFX USDC→EURC at claim time.
+  //
+  // The actual REST flow (quote → sign EIP-712 → trade → funding presign → sign
+  // → fund → poll) + the EIP-712 signing live in adapters/fx-stablefx.ts, run
+  // behind the /api/fx route so the StableFX API key and the taker's signing key
+  // (derived from `secret`) never reach the browser. We POST the inputs and read
+  // back the honest result — including the case where a TEST-key trade legitimately
+  // stalls at `taker_funded` (sandbox, no maker; PLAN §8). The recipient
+  // destination is recipientAddressFromSecret(secret), computed server-side in the
+  // route from `secret`. On any failure we throw an HONEST error (the claim
+  // pipeline degrades visibly) — we do NOT mask it as a fake conversion.
+  return realFxViaRoute(token, amountUsdc, region, secret);
+}
+
+/** Response shape of POST /api/fx (see src/app/api/fx/route.ts). */
+interface FxRouteResponse {
+  ok: boolean;
+  token?: string;
+  amount?: string;
+  rate?: number;
+  txHash?: Hex;
+  status?: string;
+  note?: string;
+  error?: string;
+}
+
+/**
+ * Real-mode FX: POST the claim inputs to /api/fx, which runs the StableFX taker
+ * flow server-side. Relative URL — this runs in the recipient's browser during a
+ * real claim. Throws an honest error on a non-OK response rather than masking it.
+ */
+async function realFxViaRoute(
+  token: string,
+  amountUsdc: string,
+  region: Region | undefined,
+  secret: Hex,
+): Promise<FxResult> {
+  const res = await fetch("/api/fx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret, region, amountUsdc }),
+  });
+  const data = (await res.json().catch(() => ({}))) as FxRouteResponse;
+  if (!res.ok || !data.ok || data.amount === undefined) {
+    throw new Error(
+      data.error ?? `[slip] StableFX FX route failed (${res.status}).`,
+    );
+  }
+  if (data.note) {
+    console.warn(`[slip] StableFX: ${data.note}`);
+  }
+  return {
+    token: data.token ?? token,
+    amount: data.amount,
+    rateUsed: data.rate,
+    txHash: data.txHash,
+  };
 }

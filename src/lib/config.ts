@@ -49,6 +49,25 @@ export function isDemoMode(): boolean {
   return false;
 }
 
+/**
+ * Circle StableFX API key (server-only — NEVER bundled to the client). Drives
+ * the real USDC→EURC conversion at claim time via Circle StableFX on Arc.
+ * NO per-adapter feature flag: when NOT in demo mode the FX adapter runs the
+ * real StableFX REST flow and surfaces honest errors; demo mode simulates.
+ */
+export const CIRCLE_STABLEFX_API_KEY = process.env.CIRCLE_STABLEFX_API_KEY;
+
+/** StableFX REST base URL (override for sandbox vs prod). */
+export const CIRCLE_STABLEFX_API_BASE =
+  process.env.CIRCLE_STABLEFX_API_BASE ?? "https://api.circle.com";
+
+/**
+ * Funded Base Sepolia EOA private key (server-only) that pays for the CCTP
+ * burn when aggregating funds onto Arc. NO per-adapter flag: real mode bridges
+ * for real via CCTP; demo mode simulates the bridge.
+ */
+export const CCTP_PRIVATE_KEY = process.env.CCTP_PRIVATE_KEY;
+
 /** A believable fixed balance shown to the demo sender (USDC, human units). */
 export const DEMO_USDC_BALANCE = 1283.5;
 
