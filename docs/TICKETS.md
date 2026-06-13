@@ -13,21 +13,21 @@ hot-spot file (coordinate / single owner).
 
 ## Status (updated 2026-06-13)
 
-**Done & on `main`:** Wave 0 (T0.1–T0.3 — types frozen, config gates, route stubs) ·
-Track C (CCTP bridge wired into engine) · Track D1 (StableFX adapter, sim in demo) · design
-system + Railway deploy. Screens already pass `recipients[]`.
+**Done & on `main`:** Wave 0 · A1 (pregen) · Track B (Unlink browser rewrite + auth routes,
+PR #3) · Track C (CCTP) · D1 (StableFX) · Track E (batch fan-out, PR #3) + batch surface wired
+to `runBatchSend` (PR #4) · Track F (batch + claim OTP + proof views, PR #2) · design + Railway
+config. **All core tracks merged — full demo runs green end-to-end (single + 6-row batch,
+single Σ-shield, no cross-leakage).**
 
-**Critical path remaining:** **B** (Unlink still the OLD custodial path — privacy rewrite
-not done) · **E** (engine still single-recipient shim) · **A1** (pregen route returns a demo
-address) · **F2** (full multi-row batch UI).
+**Remaining:** **A2** (real-mode sender login/balance — minor) · **D2/D3** (Swap FX fallback —
+optional; StableFX D1 covers FX) · **Wave 2** (gather keys → flip demo→real → one live testnet
+batch → deploy + domain).
 
-**Lower priority:** D2/D3 (Swap fallback — StableFX D1 already covers FX) · Wave 2 (live tests).
+**Deploy:** Railway is set up + auto-deploys on push to `main`. Earlier deploys failed on a
+stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys clean; then
+`railway domain` for a public URL.
 
-**Deviation to note:** config uses `CIRCLE_STABLEFX_API_KEY` (not `STABLEFX_API_KEY`).
-
-**Parallel set to run now (4 agents, disjoint files):** B · A1 · E · F2. Prompts in
-`docs/prompts/`. Rule: only the **E** agent edits `engine/index.ts`+`claim.ts`; A/B deliver
-adapter+route files; F edits screens.
+**Deviation:** config uses `CIRCLE_STABLEFX_API_KEY` (not `STABLEFX_API_KEY`).
 
 ---
 
@@ -60,16 +60,16 @@ adapter+route files; F edits screens.
 ## Wave 1 — Parallel tracks (all independent after Wave 0)
 
 ### Track A — Identity (Dynamic)
-- [ ] **A1 — Pregen adapter** 🔑(`DYNAMIC_API_TOKEN`): real `waas/create` + lookup behind
+- [x] **A1 — Pregen adapter** 🔑(`DYNAMIC_API_TOKEN`): real `waas/create` + lookup behind
   `/api/pregen`; demo impl. *Files:* `src/lib/adapters/pregen.ts`, `api/pregen/route.ts`.
 - [ ] **A2 — Sender login/balance** in real mode. *Files:* `src/components/WalletProvider.tsx`.
-- [ ] **A3 — Claim OTP login + "claim your wallet" UI.** *Files:* `src/components/ClaimScreen.tsx`.
+- [x] **A3 — Claim OTP login + "claim your wallet" UI.** *Files:* `src/components/ClaimScreen.tsx`.
 
 ### Track B — Privacy (Unlink) — hardest; give to strongest
-- [ ] **B1 — Real Unlink rewrite:** `@unlink-xyz/sdk/browser` client + `account.fromSeed` +
+- [x] **B1 — Real Unlink rewrite:** `@unlink-xyz/sdk/browser` client + `account.fromSeed` +
   faucet shield + **N sequential `transfer()`** (≤2 recipients each); status assert
   `=== "processed"`; remove the browser-throw guard. *Files:* `src/lib/adapters/unlink.ts`.
-- [ ] **B2 — Auth routes** 🔑(`UNLINK_API_KEY`): `createUnlinkAuthRoutes` for register +
+- [x] **B2 — Auth routes** 🔑(`UNLINK_API_KEY`): `createUnlinkAuthRoutes` for register +
   authorization-token. *Files:* `api/unlink/register/route.ts`, `api/unlink/authorization-token/route.ts`.
 
 ### Track C — Aggregation (CCTP)
@@ -88,18 +88,18 @@ adapter+route files; F edits screens.
 - [ ] **D3 — Cascade selector** (StableFX → Swap → sim). *Files:* `src/lib/engine/fx.ts`.
 
 ### Track E — Engine orchestration 🔥 — uses demo adapters; not blocked on A–D real code
-- [ ] **E1 — `runSend` batch loop:** loop resolve→pregen over `recipients[]`; bridge + shield
+- [x] **E1 — `runSend` batch loop:** loop resolve→pregen over `recipients[]`; bridge + shield
   Σ; fan-out N transfers; emit N claim links. *Files:* `src/lib/engine/index.ts` 🔥.
-- [ ] **E2 — `runClaim`:** payout = pregen address (drop `recipientAddressFromSecret`);
+- [x] **E2 — `runClaim`:** payout = pregen address (drop `recipientAddressFromSecret`);
   relabel claim steps as relayer-submitted. *Files:* `src/lib/engine/claim.ts` 🔥.
-- [ ] **E3 — `resolve.ts`:** email/phone → pregen path. *Files:* `src/lib/engine/resolve.ts`.
+- [x] **E3 — `resolve.ts`:** email/phone → pregen path. *Files:* `src/lib/engine/resolve.ts`.
 
 ### Track F — UI / Surfaces — uses demo engine
-- [ ] **F1 — Send screen → `recipients[]`** (single + add-row). *Files:* `src/app/page.tsx`.
-- [ ] **F2 — Batch screen:** paste rows → N links + status table; payees isolated.
+- [x] **F1 — Send screen → `recipients[]`** (single + add-row). *Files:* `src/app/page.tsx`.
+- [x] **F2 — Batch screen:** paste rows → N links + status table; payees isolated.
   *Files:* `src/app/batch/page.tsx`.
-- [ ] **F3 — Claim screen wiring** (with A3/E2). *Files:* `src/app/claim/page.tsx`.
-- [ ] **F4 — Proof views for batch:** the two-tier privacy story. *Files:*
+- [x] **F3 — Claim screen wiring** (with A3/E2). *Files:* `src/app/claim/page.tsx`.
+- [x] **F4 — Proof views for batch:** the two-tier privacy story. *Files:*
   `src/app/architecture/page.tsx`, `src/app/private/page.tsx`.
 
 ---
