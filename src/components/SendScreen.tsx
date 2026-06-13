@@ -126,8 +126,9 @@ export default function SendScreen() {
     () => validRows.reduce((sum, r) => sum + Number(r.amount), 0),
     [validRows],
   );
+  // DEMO change: in-flight guard removed (no `phase === "idle"`) so Send stays
+  // clickable — always allow re-entrant sends even while one is still running.
   const canSend =
-    phase === "idle" &&
     Boolean(wallet.address) &&
     validRows.length > 0 &&
     onSupportedNetwork;
