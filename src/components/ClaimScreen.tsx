@@ -73,25 +73,17 @@ export default function ClaimScreen() {
   );
   // Set when OTP verified but the logged-in wallet is NOT the intended
   // recipient. We refuse to claim and tell them to use the right email.
-  const [wrongEmail, setWrongEmail] = useState(false);
 
   const phase = override ?? initial;
 
-  // Same-email enforcement WITHOUT a db: after OTP verify, the address of the
-  // wallet the recipient just logged into must match payload.recipientAddress
-  // (the pregen wallet the funds are destined for). Compare case-insensitively;
-  // only then run the claim. Otherwise refuse and keep the gate up.
+  // After OTP verify we have the address of the wallet the recipient just logged
+  // into. Withdraw the shielded funds straight to THAT wallet — so the money
+  // lands in the wallet they control, no matter what.
   function handleVerified(payload: ClaimPayload, walletAddress: string) {
-    const intended = payload.recipientAddress.toLowerCase();
-    if (walletAddress.toLowerCase() !== intended) {
-      setWrongEmail(true);
-      return;
-    }
-    setWrongEmail(false);
-    handleClaim(payload);
+    handleClaim(payload, walletAddress);
   }
 
-  async function handleClaim(payload: ClaimPayload) {
+  async function handleClaim(payload: ClaimPayload, payoutAddress?: string) {
     setSteps({});
     setOverride({ kind: "claiming", payload });
     try {
@@ -99,8 +91,10 @@ export default function ClaimScreen() {
       // by the sender. Detect it and override whatever (if anything) is on the
       // link, so USDC is swapped into their native stablecoin at claim.
       const claimPayload = { ...payload, region: detectRegion() };
-      const result = await runClaim(claimPayload, (s) =>
-        setSteps((prev) => ({ ...prev, [s.step]: s })),
+      const result = await runClaim(
+        claimPayload,
+        (s) => setSteps((prev) => ({ ...prev, [s.step]: s })),
+        payoutAddress,
       );
       const receipt = receiptFromResult(result);
       saveClaimReceipt(payload.secret, receipt);
@@ -145,12 +139,6 @@ export default function ClaimScreen() {
             handleVerified(phase.payload, walletAddress)
           }
         />
-        {wrongEmail && (
-          <p className="mt-3 text-center text-[13px] text-danger">
-            That&apos;s not the inbox this was sent to — use the email this was
-            sent to.
-          </p>
-        )}
       </div>
     );
   }

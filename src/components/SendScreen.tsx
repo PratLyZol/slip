@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useMemo, useState } from "react";
-import { runBatchSend } from "@/lib/engine";
+import { runBatchSend, buildClaimUrl } from "@/lib/engine";
 import { isEmail, isPhone } from "@/lib/engine/resolve";
 import {
   EngineStep,
@@ -116,6 +116,28 @@ export default function SendScreen() {
       setResults(res);
       setSentRows(validRows);
       setPhase("done");
+
+      // Email each recipient (whose identifier is an email) their claim link, so
+      // they receive the browser link to claim + withdraw. Best-effort: a mail
+      // failure must not break the send — the links are still shown on-screen.
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      res.forEach((r, i) => {
+        const to = validRows[i]?.contact.trim();
+        if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return; // email only
+        void fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to,
+            claimUrl: buildClaimUrl(r.claimPayload, origin),
+            amountUsdc: r.claimPayload.amountUsdc,
+            senderLabel: wallet.name,
+          }),
+        }).catch((err) =>
+          console.warn(`[slip] claim-link email to ${to} failed:`, err),
+        );
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
       setPhase("idle");

@@ -55,6 +55,14 @@ function shortAddr(addr: string): string {
 export async function runClaim(
   payload: ClaimPayload,
   onStep?: ClaimStepListener,
+  /**
+   * Live payout override: the address of the Dynamic wallet the recipient JUST
+   * logged into via OTP. When present we withdraw to it instead of the payload's
+   * pregen address — so the funds always land in the wallet they actually
+   * control, regardless of pregen-address stability. Falls back to the payload's
+   * pregen address (e.g. the headless smoke run, which passes no live wallet).
+   */
+  payoutAddress?: string,
 ): Promise<ClaimResult> {
   const steps: ClaimStepState[] = [];
   const emit = (state: ClaimStepState) => {
@@ -65,9 +73,11 @@ export async function runClaim(
   };
 
   const { secret, amountUsdc, region } = payload;
-  // The payout target rides in the v2 payload: the recipient's Dynamic pregen
-  // address (resolved at send time). No more secret-derived recipient address.
-  const recipientAddress = payload.recipientAddress;
+  // Payout target: the wallet the recipient just logged into (payoutAddress),
+  // else the pregen address from the v2 payload. Using the live logged-in wallet
+  // guarantees the money lands in a wallet they control.
+  const recipientAddress = (payoutAddress ??
+    payload.recipientAddress) as `0x${string}`;
 
   // Step 1 — Validate the decoded payload. runClaim is also called headlessly
   // (smoke script) with a hand-built payload, so re-run it through the strict
