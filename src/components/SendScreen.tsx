@@ -9,6 +9,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { runSend } from "@/lib/engine";
+import { isEmail, isPhone } from "@/lib/engine/resolve";
 import {
   EngineStep,
   type EngineResult,
@@ -40,10 +41,14 @@ export default function SendScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const amountNum = Number(amount);
+  // The recipient is walletless: they claim via OTP, so the To field only accepts
+  // a phone number or email (the identifiers Dynamic pregen can mint a wallet for).
+  const recipientValid = isEmail(recipient) || isPhone(recipient);
+  const recipientInvalid = recipient.trim().length > 0 && !recipientValid;
   const canSend =
     phase === "idle" &&
     Boolean(wallet.address) &&
-    recipient.trim().length > 0 &&
+    recipientValid &&
     amountNum > 0 &&
     Number.isFinite(amountNum);
 
@@ -134,13 +139,25 @@ export default function SendScreen() {
         </label>
         <input
           id="recipient"
-          placeholder="name, username, or alice.eth"
+          type="text"
+          inputMode="email"
+          placeholder="phone number or email"
           value={recipient}
           onChange={(e) => setRecipient(e.target.value)}
           disabled={phase === "running"}
           autoComplete="off"
-          className="focus-volt mt-2.5 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 px-4 py-3.5 text-[16px] text-text outline-none transition-colors placeholder:text-text-faint focus:border-[var(--hair-strong)] disabled:opacity-60"
+          aria-invalid={recipientInvalid}
+          className={`focus-volt mt-2.5 w-full rounded-2xl border bg-ink-850 px-4 py-3.5 text-[16px] text-text outline-none transition-colors placeholder:text-text-faint disabled:opacity-60 ${
+            recipientInvalid
+              ? "border-danger"
+              : "border-[var(--hair)] focus:border-[var(--hair-strong)]"
+          }`}
         />
+        {recipientInvalid && (
+          <p className="mt-2 text-[12px] text-danger">
+            Enter a phone number or email — that&apos;s how they claim.
+          </p>
+        )}
       </div>
 
       {/* Where the recipient is — drives FX into their local money at claim. */}
