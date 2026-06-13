@@ -1,26 +1,118 @@
 @import "tailwindcss";
 
+/*
+  Slip — dark, confident, consumer-fintech.
+  Distinctive accent: a warm electric lime ("voltage") against near-black ink,
+  with a single cool counter-accent for the privacy story. Mobile-first.
+*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink-950: #07080a;
+  --ink-900: #0b0d10;
+  --ink-850: #101317;
+  --ink-800: #161a20;
+  --ink-700: #1f242c;
+  --ink-600: #2a313b;
+  --hair: #ffffff14;
+
+  --text: #f4f6f8;
+  --text-dim: #9aa3ad;
+  --text-faint: #5e6670;
+
+  --volt: #c8f24a; /* primary accent */
+  --volt-deep: #9fd11f;
+  --cool: #5ee0c8; /* privacy counter-accent */
+  --danger: #ff6b6b;
+
+  --background: var(--ink-950);
+  --foreground: var(--text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-ink-950: var(--ink-950);
+  --color-ink-900: var(--ink-900);
+  --color-ink-850: var(--ink-850);
+  --color-ink-800: var(--ink-800);
+  --color-ink-700: var(--ink-700);
+  --color-ink-600: var(--ink-600);
+
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-faint: var(--text-faint);
+
+  --color-volt: var(--volt);
+  --color-volt-deep: var(--volt-deep);
+  --color-cool: var(--cool);
+  --color-danger: var(--danger);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* App canvas: subtle vignette so the phone frame reads as a device. */
+.app-canvas {
+  background:
+    radial-gradient(120% 80% at 50% -10%, #14181d 0%, var(--ink-950) 55%),
+    var(--ink-950);
+}
+
+/* Numpad-friendly big amount: tabular figures, no jitter. */
+.amount-figure {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Tasteful focus ring matching the accent. */
+.focus-volt:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--volt) 70%, transparent);
+  outline-offset: 2px;
+}
+
+@keyframes slip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.animate-slip-pulse {
+  animation: slip-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes slip-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slip-rise {
+  animation: slip-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-slip-pulse,
+  .animate-slip-rise {
+    animation: none;
+  }
 }
