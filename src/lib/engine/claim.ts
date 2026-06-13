@@ -6,25 +6,23 @@
  * claim pipeline takes that account live:
  *
  *   validate payload
- *     → reconstruct the counterfactual account from the secret
- *     → sponsor gas (paymaster; recipient never holds a gas token)
- *     → deploy + withdraw in ONE batched UserOp into the recipient's walletless
- *       embedded account
+ *     → reconstruct the claim account from the secret
+ *     → relayer covers gas (Unlink's relayer submits the withdraw; recipient
+ *       never holds a gas token — there is NO paymaster/AA)
+ *     → withdraw (unshield) the money to the recipient's pregen payout address
  *     → FX into the recipient's local stablecoin (Phase 4 hook — see fx.ts)
  *     → done
  *
  * Walletless + gasless is the whole point: in demo mode the recipient needs
- * ZERO credentials. No wallet UI, no seed phrase, no gas prompt — an embedded
- * account is silently derived for them (recipientAddressFromSecret).
+ * ZERO credentials. No wallet UI, no seed phrase, no gas prompt. The payout
+ * address rides in the v2 claim payload (`recipientAddress` — a Dynamic pregen
+ * wallet the recipient auto-associates by OTP login).
  */
 
 import { isDemoMode } from "../config";
 import { simLatency, simTx, sleep } from "../demo/sim";
-import { getShieldOps, usdcToken } from "../adapters/unlink";
-import {
-  addressFromSecret,
-  recipientAddressFromSecret,
-} from "./counterfactual";
+import { getShieldOps } from "../adapters/unlink";
+import { addressFromSecret } from "./counterfactual";
 import { decodeClaimFragment, encodeClaimFragment } from "./claimLink";
 import { fxAtClaim } from "./fx";
 import {
@@ -49,9 +47,10 @@ function shortAddr(addr: string): string {
  *
  * Demo mode (the contract): every leg is simulated with realistic latency and a
  * deterministic Arc-style tx hash. The recipient ends up with the amount in
- * their local stablecoin and a printable receipt. Real 4337 infra is NOT
- * available on Arc (no published EntryPoint; ZeroDev not confirmed on Arc — see
- * docs/research), so the real sponsor/withdraw legs are honest stubs.
+ * their local stablecoin and a printable receipt. There is NO paymaster/AA on
+ * the real path — Unlink's RELAYER submits the withdraw and covers gas, so the
+ * recipient pays nothing. On any real-path failure the leg degrades to a labeled
+ * simulation so the claim still completes (PRD §8).
  */
 export async function runClaim(
   payload: ClaimPayload,
@@ -66,6 +65,9 @@ export async function runClaim(
   };
 
   const { secret, amountUsdc, region } = payload;
+  // The payout target rides in the v2 payload: the recipient's Dynamic pregen
+  // address (resolved at send time). No more secret-derived recipient address.
+  const recipientAddress = payload.recipientAddress;
 
   // Step 1 — Validate the decoded payload. runClaim is also called headlessly
   // (smoke script) with a hand-built payload, so re-run it through the strict
@@ -82,47 +84,34 @@ export async function runClaim(
     detail: "Slip is valid",
   });
 
-  // Step 2 — Reconstruct the counterfactual account from the secret.
+  // Step 2 — Reconstruct the claim account from the secret. This is the shielded
+  // account the private transfer targeted; the recipient re-derives it here to
+  // withdraw. The payout address (where the money lands) came in the payload.
   emit({ step: ClaimStep.Reconstruct, status: "running" });
   await sleep(simLatency(300, 700));
   const counterfactualAddress = addressFromSecret(secret);
-  // Silently derive the recipient's walletless embedded account. No UI, no seed.
-  const recipientAddress = recipientAddressFromSecret(secret);
   emit({
     step: ClaimStep.Reconstruct,
     status: "done",
     detail: `Account ${shortAddr(counterfactualAddress)} reconstructed`,
   });
 
-  // Step 3 — Sponsor gas (paymaster). Demo simulates sponsorship.
+  // Step 3 — Relayer covers gas. There is NO paymaster/AA — Unlink's relayer
+  // submits the withdraw and pays gas, so the recipient never holds a gas token.
   emit({ step: ClaimStep.SponsorGas, status: "running" });
   await sleep(simLatency(400, 900));
-  if (isDemoMode()) {
-    emit({
-      step: ClaimStep.SponsorGas,
-      status: "done",
-      detail: "Gas sponsored — recipient pays nothing",
-    });
-  } else {
-    // NOT YET WIRED — real paymaster sponsorship.
-    // Real 4337 infra isn't available on Arc per research (no published
-    // EntryPoint; ZeroDev not confirmed on Arc). PRD §8 fallback: a funded
-    // relayer covers gas so the user never sees a gas prompt. Until that relayer
-    // / paymaster exists, fall back to a labeled simulation.
-    console.warn(
-      "[slip] real gas sponsorship (paymaster/relayer) not wired yet — simulating.",
-    );
-    emit({
-      step: ClaimStep.SponsorGas,
-      status: "done",
-      detail: "Gas sponsored (simulated)",
-    });
-  }
+  emit({
+    step: ClaimStep.SponsorGas,
+    status: "done",
+    detail: isDemoMode()
+      ? "Relayer covers gas — recipient pays nothing"
+      : "Relayer covers gas — recipient pays nothing (Unlink relayer)",
+  });
 
-  // Step 4 — Unshield from the claim's shielded balance into the recipient's
-  // public account. This is the PUBLIC "out" edge (destination + amount visible,
-  // source private account is NOT). Modeled as ONE batched op: deploy the
-  // counterfactual account + withdraw the money in a single step.
+  // Step 4 — Unshield (withdraw) from the claim's shielded balance into the
+  // recipient's pregen payout address. PUBLIC "out" edge (destination + amount
+  // visible, the shielded source is NOT). Relayer-submitted — recipient pays no
+  // gas (no batched UserOp / 4337; Unlink's relayer handles submission).
   emit({ step: ClaimStep.Withdraw, status: "running" });
   const { withdrawTx, unshield } = await unshieldAndWithdraw(
     counterfactualAddress,
@@ -134,8 +123,8 @@ export async function runClaim(
     step: ClaimStep.Withdraw,
     status: "done",
     detail: withdrawTx.simulated
-      ? "Withdrawn from shielded balance (simulated)"
-      : "Withdrawn from shielded balance",
+      ? "Withdrawn from shielded balance — relayer-submitted (simulated)"
+      : "Withdrawn from shielded balance — relayer-submitted",
     explorerUrl: withdrawTx.explorerUrl,
   });
 
@@ -168,14 +157,14 @@ export async function runClaim(
 
 /**
  * Pull the money out of the claim's Unlink shielded balance into the
- * recipient's public account (PRD §2 step 7 + Phase 3). This is the public
- * "out" edge of the privacy path: the Unlink `withdraw` reveals destination +
- * amount but NOT the shielded source.
+ * recipient's public payout address (PRD §2 step 7 + Phase 3). This is the
+ * public "out" edge of the privacy path: the Unlink `withdraw` reveals
+ * destination + amount but NOT the shielded source. Relayer-submitted — the
+ * recipient pays no gas (no paymaster/AA).
  *
- * Returns both a {@link TxRef} (the withdraw tx, modeling the batched
- * deploy-and-withdraw for the existing receipt/UI) and the {@link PrivacyLeg}
- * for the proof view. On any real-path failure, degrades to a labeled
- * simulation so the claim still completes (PRD §8).
+ * Returns both a {@link TxRef} (the withdraw tx, for the existing receipt/UI)
+ * and the {@link PrivacyLeg} for the proof view. On any real-path failure,
+ * degrades to a labeled simulation so the claim still completes (PRD §8).
  */
 async function unshieldAndWithdraw(
   counterfactual: string,
@@ -185,7 +174,7 @@ async function unshieldAndWithdraw(
 ): Promise<{ withdrawTx: TxRef; unshield: PrivacyLeg }> {
   const ops = getShieldOps();
   try {
-    const leg = await ops.unshield(secret, recipient, usdcToken(amountUsdc));
+    const leg = await ops.unshield(secret, recipient, amountUsdc);
     const hash =
       leg.txHash ?? simTx("claim-batch", counterfactual, recipient, amountUsdc, secret).hash;
     const withdrawTx: TxRef = {

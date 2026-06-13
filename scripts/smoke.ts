@@ -17,10 +17,7 @@ import {
   decodeClaimFragment,
   encodeClaimFragment,
 } from "../src/lib/engine/claimLink.ts";
-import {
-  addressFromSecret,
-  recipientAddressFromSecret,
-} from "../src/lib/engine/counterfactual.ts";
+import { addressFromSecret } from "../src/lib/engine/counterfactual.ts";
 import {
   parseBatchInput,
   validRows,
@@ -144,10 +141,13 @@ async function main() {
   console.log("");
 
   // --- Claim assertions ---
+  // v2 contract: the payout address rides in the claim PAYLOAD (the recipient's
+  // Dynamic pregen address, resolved at send time) — it is NO LONGER derived
+  // from the secret. The claim withdraws to exactly that payload address.
   assert(claim.recipientAddress?.startsWith("0x"), "no recipient address");
   assert(
-    claim.recipientAddress === recipientAddressFromSecret(result.secret),
-    "recipient address is not derivable from the secret",
+    claim.recipientAddress === decoded.payload.recipientAddress,
+    "claim payout address must equal the payload's recipientAddress",
   );
   assert(
     claim.recipientAddress !== result.counterfactualAddress,

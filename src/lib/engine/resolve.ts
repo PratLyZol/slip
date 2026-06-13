@@ -1,7 +1,14 @@
 /**
- * Step 1 — Resolve: recipient name/username → identity/address.
+ * Step 1 — Resolve: recipient identifier → payout address.
  *
- * Two paths:
+ * Three paths:
+ *  - email / phone → a Dynamic PREGEN payout address via `POST /api/pregen`
+ *    (Track A owns that route; it pre-generates a stable embedded wallet for the
+ *    identifier and returns its EVM address). This is the real walletless-payout
+ *    path: the recipient claims by OTP login and auto-associates that wallet. On
+ *    any failure we degrade to the deterministic demo mapping so a send never
+ *    blocks (PRD §8). `via` stays "demo" (the frozen ResolveResult only allows
+ *    "demo" | "ens"); a `note` records that it came from Dynamic pregen.
  *  - `.eth` names → a REAL ENS public-resolver read on Ethereum mainnet via
  *    viem's built-in `getEnsAddress` (namehash → resolver → addr). NO ENS SDK —
  *    viem is plumbing, not a sponsor SDK (AGENTS.md: "ENS is used only as a plain
@@ -49,6 +56,49 @@ export function isEnsName(recipient: string): boolean {
   return recipient.trim().toLowerCase().endsWith(".eth");
 }
 
+/** True when a handle looks like an email address (heuristic: contains "@"). */
+export function isEmail(recipient: string): boolean {
+  const v = recipient.trim();
+  return v.includes("@") && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+}
+
+/**
+ * True when a handle looks like a phone number (heuristic): a leading "+" or a
+ * value that is mostly digits once separators are stripped (≥7 digits). Plain
+ * names never match — they have letters and no leading "+".
+ */
+export function isPhone(recipient: string): boolean {
+  const v = recipient.trim();
+  if (!v) return false;
+  const digits = v.replace(/[\s\-().]/g, "");
+  if (v.startsWith("+")) return /^\+\d{7,15}$/.test(digits);
+  return /^\d{7,15}$/.test(digits);
+}
+
+/**
+ * Resolve an email/phone identifier to its Dynamic PREGEN payout address via
+ * `POST /api/pregen` (Track A). Returns the checksummed address. Throws on any
+ * network / non-OK response so the caller degrades to the demo mapping.
+ *
+ * The route mirrors `PregenOps.pregenAddress` (engine/types.ts): it returns
+ * `{ address, existed }`. We only need the address here.
+ */
+export async function pregenResolve(identifier: string): Promise<Address> {
+  const res = await fetch("/api/pregen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!res.ok) {
+    throw new Error(`pregen route ${res.status}`);
+  }
+  const body = (await res.json()) as { address?: string };
+  if (typeof body.address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(body.address)) {
+    throw new Error("pregen route returned no address");
+  }
+  return getAddress(body.address);
+}
+
 /**
  * Real ENS public-resolver read via viem (namehash → resolver → addr). Returns
  * the checksummed address, or null if the name is unregistered / has no addr
@@ -80,11 +130,33 @@ export async function ensResolve(name: string): Promise<Address | null> {
 /**
  * Resolve a recipient handle to an address.
  *
- * `.eth` → real ENS read (graceful demo fallback on failure). Otherwise → the
+ * email/phone → Dynamic pregen payout address (graceful demo fallback). `.eth` →
+ * real ENS read (graceful demo fallback on failure). Otherwise → the
  * deterministic demo mapping. The `via` / `note` fields let the UI show how the
  * name was resolved ("alice.eth → 0x1234…abcd").
  */
 export async function resolve(recipient: string): Promise<ResolveResult> {
+  // Email / phone → Dynamic pregen embedded wallet (the real walletless payout
+  // target). `via` is "demo" (ResolveResult only allows "demo" | "ens"); the
+  // note distinguishes a real pregen hit from the plain demo mapping.
+  if (isEmail(recipient) || isPhone(recipient)) {
+    try {
+      const addr = await pregenResolve(recipient);
+      return { address: addr, via: "demo", note: "via Dynamic pregen" };
+    } catch (err) {
+      // Never block the send on the pregen route — degrade to the demo mapping.
+      const reason = err instanceof Error ? err.message : "pregen lookup failed";
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[slip] pregen resolve failed for ${recipient} — using demo address. (${reason})`);
+      }
+      return {
+        address: demoAddressFor(recipient),
+        via: "demo",
+        note: "pregen unavailable — using a demo address",
+      };
+    }
+  }
+
   if (isEnsName(recipient)) {
     try {
       const addr = await ensResolve(recipient);
