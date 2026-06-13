@@ -25,7 +25,7 @@
  * never "logging into a wallet". The verb is identity, not crypto.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useConnectWithOtp,
   useUserWallets,
@@ -62,7 +62,27 @@ function OtpLoginDynamic({ onVerified }: Props) {
   const [code, setCode] = useState("");
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [awaitingWallet, setAwaitingWallet] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // After OTP verify, the embedded wallet may take a beat to appear (Dynamic
+  // creates it on first login). Reading userWallets synchronously inside verify()
+  // is STALE — wait for it here and hand the address up once it lands.
+  useEffect(() => {
+    if (!awaitingWallet) return;
+    const address = userWallets[0]?.address;
+    if (address) {
+      setAwaitingWallet(false);
+      onVerified(address);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setAwaitingWallet(false);
+      setVerifying(false);
+      setError("We couldn't load your wallet. Please try the code again.");
+    }, 15000);
+    return () => clearTimeout(timeout);
+  }, [awaitingWallet, userWallets, onVerified]);
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const codeReady = code.length === CODE_LENGTH;
@@ -96,26 +116,17 @@ function OtpLoginDynamic({ onVerified }: Props) {
     setVerifying(true);
     setError(null);
     try {
-      // Verifies the code and logs the user into their Dynamic embedded wallet.
+      // Verifies the code and logs the user into their Dynamic embedded wallet
+      // (creating it on first login). The wallet appears asynchronously, so we
+      // wait for it in the effect above rather than reading it here (stale).
       await verifyOneTimePassword(code);
-
-      // After verify, read the logged-in wallet. The same-email enforcement
-      // (wallet === payload.recipientAddress) happens up in ClaimScreen.
-      const address = userWallets[0]?.address;
-      if (!address) {
-        setError(
-          "We couldn't confirm your account. Please try the code again.",
-        );
-        return;
-      }
-      onVerified(address);
+      setAwaitingWallet(true);
     } catch (e) {
       setError(
         e instanceof Error
           ? e.message
           : "That code didn't match. Check it and try again.",
       );
-    } finally {
       setVerifying(false);
     }
   }
