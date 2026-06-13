@@ -52,10 +52,7 @@ function DynamicConnect() {
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!address) {
-      setByChain(null);
-      return;
-    }
+    if (!address) return;
     let cancelled = false;
     getUsdcBalanceByChain(address)
       .then((b) => {
