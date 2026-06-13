@@ -115,11 +115,26 @@ export async function bridgeWithWalletClient(
   const { amountUsdc, recipientAddress, sourceChain } = params;
 
   // Wrap the viem WalletClient as an EIP-1193 provider. A viem WalletClient's
-  // `.request` method is EIP-1193-compatible; bind it to preserve `this` when
-  // bridge-kit calls it internally. The adapter only exercises `request`, so
-  // casting the single-method object to EIP1193Provider is safe here.
+  // `.request` method is EIP-1193-compatible; bind it to preserve `this`.
+  //
+  // CHAIN-SWITCH SHIM: the Dynamic embedded (Turnkey) wallet selects its network
+  // via the SDK's `switchNetwork` — done in WalletProvider BEFORE this client is
+  // built — NOT via EIP-1193. bridge-kit, assuming an injected wallet, calls
+  // `wallet_switchEthereumChain` / `wallet_addEthereumChain` on the provider;
+  // those get routed to the HTTP RPC node, which rejects `wallet_*` methods
+  // ("rpc method is unsupported"). Since the wallet is ALREADY on the correct
+  // origin chain, we intercept those calls and resolve them as no-op successes
+  // (EIP-3326 returns null on success); everything else passes through.
+  const rawRequest = walletClient.request.bind(walletClient) as (args: {
+    method: string;
+    params?: unknown;
+  }) => Promise<unknown>;
   const eip1193Provider = {
-    request: walletClient.request.bind(walletClient),
+    request: (args: { method: string; params?: unknown }) =>
+      args.method === "wallet_switchEthereumChain" ||
+      args.method === "wallet_addEthereumChain"
+        ? Promise.resolve(null)
+        : rawRequest(args),
   } as unknown as EIP1193Provider;
 
   // Default (user-controlled) capabilities: the connected wallet owns the
