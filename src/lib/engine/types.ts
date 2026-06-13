@@ -6,7 +6,7 @@
  * implementations both conform to the interfaces implied here.
  */
 
-import type { Address, Hex } from "viem";
+import type { Address, Hex, WalletClient } from "viem";
 
 /** Recipient destination currency region. EU → EURC, otherwise → USDC. */
 export type Region = "US" | "EU";
@@ -60,6 +60,14 @@ export interface SendRequest {
   senderName?: string;
   /** Connected sender wallet address — the Arc address aggregated funds mint to. */
   senderAddress?: Address;
+  /**
+   * Obtain a viem WalletClient for the given chainId (decimal string) from the
+   * connected Dynamic wallet. Injected by SendScreen from `wallet.getWalletClient`.
+   * Required for the real CCTP bridge path — the burn is signed by the connected
+   * wallet on Base Sepolia (chainId "84532"), not a server-held private key.
+   * Absent in demo mode or when no wallet is connected.
+   */
+  getWalletClient?: (chainId: string) => Promise<WalletClient | undefined>;
 }
 
 /** The seven steps of a send (PRD §2). Ordered. */

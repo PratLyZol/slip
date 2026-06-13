@@ -107,6 +107,9 @@ export default function SendScreen() {
           })),
           senderName: wallet.name,
           senderAddress: wallet.address,
+          // Inject the wallet client getter so the engine's aggregate step can
+          // obtain a Base Sepolia WalletClient for the wallet-signed CCTP burn.
+          getWalletClient: wallet.getWalletClient,
         },
         onStep,
       );

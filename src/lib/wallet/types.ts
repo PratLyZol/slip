@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import type { Address, WalletClient } from "viem";
 
 /** Unified wallet view consumed by the UI. Real-only (the connected wallet). */
 export interface WalletState {
@@ -14,4 +14,11 @@ export interface WalletState {
   login: () => void;
   /** Disconnect the wallet. */
   logout: () => void;
+  /**
+   * Obtain a viem WalletClient for the requested chain from the connected
+   * Dynamic wallet. Returns `undefined` when no wallet is connected or the
+   * Dynamic environment is absent. The chainId is a decimal string (e.g.
+   * "84532" for Base Sepolia, "5042002" for Arc testnet).
+   */
+  getWalletClient: (chainId: string) => Promise<WalletClient | undefined>;
 }

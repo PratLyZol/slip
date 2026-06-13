@@ -1,63 +1,28 @@
 /**
- * POST /api/bridge — server route that runs the REAL Circle CCTP bridge
- * (Base Sepolia → Arc) via @circle-fin/bridge-kit. Exists because bridge-kit is
- * Node-only and the burn is paid by `CCTP_PRIVATE_KEY` (a secret) — neither may
- * reach the browser. The frontend (BridgePanel / the engine's aggregate step in
- * real mode) POSTs here; the route runs the bridge server-side and returns the
- * two public edges (burn on Base Sepolia, mint on Arc).
+ * POST /api/bridge — DEPRECATED.
  *
- * Request  { amountUsdc, recipientAddress }
- * Response 200 { ok:true, burnTx, mintTx }
- *          400 { ok:false, error }   // demo mode / bad input
- *          502 { ok:false, error }   // bridge failed (honest, no fake success)
+ * The CCTP bridge (Base Sepolia → Arc) now runs CLIENT-SIDE: the burn is signed
+ * by and funded from the connected wallet's viem WalletClient via
+ * `bridgeWithWalletClient` (see src/lib/adapters/bridge.ts). The old server-side
+ * path that paid the burn with a `CCTP_PRIVATE_KEY` secret has been removed — a
+ * server key burning its own USDC would mean the recipient never owns the funds
+ * and the Arc mint recipient wouldn't match the connected wallet.
+ *
+ * The engine no longer calls this route. It is kept only to return an honest 410
+ * so any stale client that still POSTs here gets a clear signal instead of a
+ * silent failure.
  */
 
-import { getBridgeOps } from "../../../lib/adapters/bridge";
-import { isDemoMode } from "../../../lib/config";
+// Static response — nothing to compute, nothing to cache that matters.
+export const dynamic = "force-static";
 
-// A live CCTP bridge — never cache.
-export const dynamic = "force-dynamic";
-// bridge-kit + attestation polling can take ~20s; give the function headroom.
-export const maxDuration = 120;
+const DEPRECATION =
+  "POST /api/bridge is deprecated. The CCTP bridge is now wallet-signed and runs client-side (bridgeWithWalletClient). There is no server burn path.";
 
-interface BridgeRequestBody {
-  amountUsdc?: string;
-  recipientAddress?: string;
+export async function POST(): Promise<Response> {
+  return Response.json({ ok: false, error: DEPRECATION }, { status: 410 });
 }
 
-function isAddress(v: unknown): v is string {
-  return typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
-}
-
-export async function POST(request: Request): Promise<Response> {
-  if (isDemoMode()) {
-    return Response.json(
-      { ok: false, error: "Demo mode — the bridge is simulated client-side, not via /api/bridge." },
-      { status: 400 },
-    );
-  }
-
-  let body: BridgeRequestBody;
-  try {
-    body = (await request.json()) as BridgeRequestBody;
-  } catch {
-    return Response.json({ ok: false, error: "Invalid JSON body." }, { status: 400 });
-  }
-
-  const { amountUsdc, recipientAddress } = body;
-  if (typeof amountUsdc !== "string" || !/^\d+(\.\d{1,6})?$/.test(amountUsdc)) {
-    return Response.json({ ok: false, error: "Missing or malformed `amountUsdc`." }, { status: 400 });
-  }
-  if (!isAddress(recipientAddress)) {
-    return Response.json({ ok: false, error: "Missing or malformed `recipientAddress`." }, { status: 400 });
-  }
-
-  try {
-    // Not demo → getBridgeOps() returns the real bridge-kit path (server-side).
-    const result = await getBridgeOps().bridgeToArc({ amountUsdc, recipientAddress });
-    return Response.json({ ok: true, burnTx: result.burnTx, mintTx: result.mintTx });
-  } catch (err) {
-    const error = err instanceof Error ? err.message : "CCTP bridge failed.";
-    return Response.json({ ok: false, error }, { status: 502 });
-  }
+export async function GET(): Promise<Response> {
+  return Response.json({ ok: false, error: DEPRECATION }, { status: 410 });
 }

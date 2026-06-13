@@ -10,13 +10,14 @@
  * it just has no wallet until you set the env id and connect.
  */
 
-import { createContext, useContext, useEffect, useState } from "react";
-import type { Address } from "viem";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import type { Address, WalletClient } from "viem";
 import {
   useDynamicContext,
   useIsLoggedIn,
   useUserWallets,
 } from "@dynamic-labs/sdk-react-core";
+import { isEthereumWallet } from "@dynamic-labs/ethereum";
 import { DYNAMIC_ENV_ID } from "@/lib/config";
 import { getUsdcBalance } from "@/lib/adapters/balance";
 import { shortAddress } from "@/lib/format";
@@ -57,6 +58,7 @@ function DisconnectedWalletProvider({
     balanceUsdc: null,
     login: () => {},
     logout: () => {},
+    getWalletClient: async () => undefined,
   };
   return (
     <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
@@ -67,7 +69,8 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
   const { setShowAuthFlow, handleLogOut } = useDynamicContext();
   const isLoggedIn = useIsLoggedIn();
   const wallets = useUserWallets();
-  const address = wallets[0]?.address as Address | undefined;
+  const primaryWallet = wallets[0];
+  const address = primaryWallet?.address as Address | undefined;
   const [balanceUsdc, setBalanceUsdc] = useState<number | null>(null);
 
   useEffect(() => {
@@ -85,6 +88,29 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
     };
   }, [address]);
 
+  /**
+   * Obtain a viem WalletClient for the requested chain from the connected
+   * Dynamic embedded wallet. Uses the `isEthereumWallet` type guard to confirm
+   * the wallet exposes `getWalletClient` before calling it. Returns undefined
+   * when no wallet is connected or the wallet is not an EVM wallet.
+   *
+   * IMPORTANT: the embedded (Turnkey) connector's `getWalletClient(chainId)`
+   * IGNORES the chainId arg and binds the client to the wallet's currently
+   * selected network (defaults to evmNetworks[0]). So we MUST switch the active
+   * chain first — otherwise the Arc deposit (5042002) and the Base Sepolia CCTP
+   * burn (84532) would both sign on whichever chain happens to be active.
+   * `switchNetwork` lives on the wallet and takes the numeric chain id.
+   */
+  const getWalletClient = useCallback(
+    async (chainId: string): Promise<WalletClient | undefined> => {
+      if (!primaryWallet) return undefined;
+      if (!isEthereumWallet(primaryWallet)) return undefined;
+      await primaryWallet.switchNetwork(Number(chainId));
+      return primaryWallet.getWalletClient(chainId) as Promise<WalletClient | undefined>;
+    },
+    [primaryWallet],
+  );
+
   const value: WalletState = {
     loggedIn: Boolean(isLoggedIn && address),
     name: address ? shortAddress(address) : "",
@@ -92,6 +118,7 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
     balanceUsdc,
     login: () => setShowAuthFlow(true),
     logout: () => handleLogOut(),
+    getWalletClient,
   };
 
   return (
