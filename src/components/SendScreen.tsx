@@ -95,15 +95,15 @@ export default function SendScreen() {
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* Amount — the hero. */}
-      <div className="mt-2 flex flex-col items-center pt-6">
-        <label className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
-          You send
-        </label>
-        <div className="mt-3 flex items-baseline gap-1">
-          <span className="amount-figure text-[40px] font-medium text-text-faint">
-            $
-          </span>
+      {/* Amount — the hero, lit from behind. */}
+      <div className="rise relative mt-2 flex flex-col items-center pt-7">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-0 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.07] blur-3xl"
+        />
+        <label className="kicker">You send</label>
+        <div className="mt-4 flex items-baseline gap-1">
+          <span className="amount-figure text-[38px] text-text-faint">$</span>
           <input
             inputMode="decimal"
             placeholder="0"
@@ -113,11 +113,11 @@ export default function SendScreen() {
               if ((v.match(/\./g)?.length ?? 0) <= 1) setAmount(v);
             }}
             disabled={phase === "running"}
-            className="amount-figure w-[clamp(2ch,60vw,7ch)] bg-transparent text-center text-[64px] font-semibold leading-none text-text outline-none placeholder:text-text-faint disabled:opacity-60"
+            className="amount-figure w-[clamp(2ch,60vw,7ch)] bg-transparent text-center text-[68px] font-medium leading-none text-text caret-[var(--volt)] outline-none placeholder:text-ink-700 disabled:opacity-60"
             aria-label="Amount in USD"
           />
         </div>
-        <p className="mt-2 text-[12px] text-text-faint">
+        <p className="amount-figure mt-3 text-[12px] text-text-faint">
           {wallet.balanceUsdc !== null
             ? `Balance $${formatAmount(wallet.balanceUsdc)} USDC`
             : "Loading balance…"}
@@ -125,11 +125,8 @@ export default function SendScreen() {
       </div>
 
       {/* Recipient */}
-      <div className="mt-8">
-        <label
-          htmlFor="recipient"
-          className="text-[12px] font-medium uppercase tracking-wide text-text-faint"
-        >
+      <div className="rise mt-9">
+        <label htmlFor="recipient" className="kicker">
           To
         </label>
         <input
@@ -139,25 +136,24 @@ export default function SendScreen() {
           onChange={(e) => setRecipient(e.target.value)}
           disabled={phase === "running"}
           autoComplete="off"
-          className="focus-volt mt-2 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 px-4 py-3.5 text-[16px] text-text outline-none placeholder:text-text-faint disabled:opacity-60"
+          className="focus-volt mt-2.5 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 px-4 py-3.5 text-[16px] text-text outline-none transition-colors placeholder:text-text-faint focus:border-[var(--hair-strong)] disabled:opacity-60"
         />
       </div>
 
       {/* Where the recipient is — drives FX into their local money at claim. */}
-      <div className="mt-4">
-        <span className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
-          Where are they?
-        </span>
-        <div className="mt-2 flex gap-2">
+      <div className="rise mt-5">
+        <span className="kicker">Where are they?</span>
+        <div className="mt-2.5 flex gap-1 rounded-2xl border border-[var(--hair)] bg-ink-900 p-1">
           {(["US", "EU"] as const).map((r) => (
             <button
               key={r}
               onClick={() => setRegion(r)}
               disabled={phase === "running"}
-              className={`flex-1 rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-colors disabled:opacity-60 ${
+              aria-pressed={region === r}
+              className={`flex-1 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all disabled:opacity-60 ${
                 region === r
-                  ? "border-volt bg-volt/10 text-text"
-                  : "border-[var(--hair)] bg-ink-850 text-text-dim hover:text-text"
+                  ? "bg-ink-700 text-text shadow-[0_1px_0_#ffffff14_inset]"
+                  : "text-text-faint hover:text-text-dim"
               }`}
             >
               {r === "US" ? "🇺🇸 United States" : "🇪🇺 Europe"}
@@ -165,22 +161,24 @@ export default function SendScreen() {
           ))}
         </div>
         <p className="mt-2 text-[11px] text-text-faint">
-          They&apos;ll get their money in {region === "EU" ? "euros (EURC)" : "dollars (USDC)"}.
+          They&apos;ll get their money in{" "}
+          <span className="font-semibold text-text-dim">
+            {region === "EU" ? "euros (EURC)" : "dollars (USDC)"}
+          </span>
+          .
         </p>
       </div>
 
       {error && (
-        <p className="mt-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-[13px] text-danger">
+        <p className="animate-slip-rise mt-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-[13px] text-danger">
           {error}
         </p>
       )}
 
       {/* Live engine progress */}
       {phase === "running" && (
-        <div className="animate-slip-rise mt-7 rounded-2xl border border-[var(--hair)] bg-ink-900/60 p-5">
-          <p className="mb-4 text-[12px] font-medium uppercase tracking-wide text-text-faint">
-            Sending
-          </p>
+        <div className="card card-pop animate-slip-rise mt-7 p-5">
+          <p className="kicker mb-4">Sending</p>
           <EngineSteps states={states} />
         </div>
       )}
@@ -191,7 +189,7 @@ export default function SendScreen() {
       <button
         onClick={handleSend}
         disabled={!canSend}
-        className="focus-volt mt-6 w-full rounded-2xl bg-volt py-4 text-[16px] font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+        className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-30"
       >
         {phase === "running" ? "Sending…" : "Send"}
       </button>

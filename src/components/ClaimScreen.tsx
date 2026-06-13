@@ -115,29 +115,31 @@ export default function ClaimScreen() {
   const claiming = phase.kind === "claiming";
 
   return (
-    <div className="animate-slip-rise flex flex-1 flex-col items-center pt-6 text-center">
-      <span className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
+    <div className="flex flex-1 flex-col items-center pt-6 text-center">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-14 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.08] blur-3xl"
+      />
+      <span className="kicker rise">
         {payload.senderName
           ? `${payload.senderName} sent you`
           : "Someone sent you"}
       </span>
-      <h1 className="amount-figure mt-3 text-[56px] font-semibold leading-none">
+      <h1 className="amount-figure rise mt-4 text-[60px] font-medium leading-none">
         {amount}
       </h1>
-      <p className="mt-3 text-[14px] text-text-dim">
-        Arriving as <span className="font-medium text-text">{currency}</span> —
-        no wallet, no gas, no fees on you.
+      <p className="rise mt-4 text-[14px] text-text-dim">
+        Arriving as <span className="font-semibold text-text">{currency}</span>{" "}
+        — no wallet, no gas, no fees on you.
       </p>
 
       {claiming ? (
-        <div className="animate-slip-rise mt-8 w-full rounded-2xl border border-[var(--hair)] bg-ink-900/60 p-5 text-left">
-          <p className="mb-4 text-[12px] font-medium uppercase tracking-wide text-text-faint">
-            Claiming
-          </p>
+        <div className="card card-pop animate-slip-rise mt-8 w-full p-5 text-left">
+          <p className="kicker mb-4">Claiming</p>
           <ClaimSteps states={steps} />
         </div>
       ) : (
-        <div className="mt-8 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 p-4 text-left">
+        <div className="card rise mt-8 w-full p-4 text-left">
           <Row label="Amount" value={amount} />
           <Row label="Currency" value={currency} />
           <Row label="Claim account" value={shortAddress(account)} mono />
@@ -153,7 +155,7 @@ export default function ClaimScreen() {
       <button
         onClick={() => handleClaim(payload)}
         disabled={claiming}
-        className="focus-volt mt-6 w-full rounded-2xl bg-volt py-4 text-[16px] font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
       >
         {claiming ? "Claiming…" : "Claim your money"}
       </button>
@@ -185,8 +187,8 @@ function SuccessState({
         })} ${receipt.token}`;
 
   return (
-    <div className="animate-slip-rise flex flex-1 flex-col items-center pt-6 text-center">
-      <span className="grid h-16 w-16 place-items-center rounded-full bg-volt text-ink-950">
+    <div className="flex flex-1 flex-col items-center pt-6 text-center">
+      <span className="rise grid h-16 w-16 place-items-center rounded-full bg-volt text-ink-950 shadow-[0_0_48px_-8px_var(--volt)]">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
           <path
             d="m5 12.5 4.5 4.5L19 7"
@@ -198,19 +200,19 @@ function SuccessState({
         </svg>
       </span>
 
-      <h1 className="mt-5 text-[26px] font-semibold tracking-tight">
+      <h1 className="display rise mt-5 text-[26px] font-semibold">
         {alreadyClaimed ? "Already claimed" : "You received"}
       </h1>
-      <p className="amount-figure mt-1 text-[40px] font-semibold leading-none">
+      <p className="amount-figure rise mt-2 text-[44px] font-medium leading-none">
         {received}
       </p>
       {alreadyClaimed && (
-        <p className="mt-3 text-[13px] text-text-dim">
+        <p className="rise mt-3 text-[13px] text-text-dim">
           This link was already claimed on this device. Here&apos;s the receipt.
         </p>
       )}
 
-      <div className="mt-8 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 p-4 text-left">
+      <div className="card card-pop rise mt-8 w-full p-4 text-left">
         <Row label="Received" value={received} />
         {payload.senderName && <Row label="From" value={payload.senderName} />}
         <Row

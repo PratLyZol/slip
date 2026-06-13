@@ -39,7 +39,11 @@ export default function EngineSteps({ states, showcase = false }: Props) {
                 className="absolute left-[15px] top-8 bottom-0 w-px bg-[var(--hair)]"
               />
             )}
-            <StepDot index={i + 1} status={status} />
+            <StepDot
+              index={i + 1}
+              status={status}
+              cool={step === EngineStep.Shield}
+            />
             <div className="flex-1 pb-4">
               <div className="flex items-center justify-between gap-2">
                 <span
@@ -101,12 +105,29 @@ export default function EngineSteps({ states, showcase = false }: Props) {
   );
 }
 
-function StepDot({ index, status }: { index: number; status: StepStatus }) {
+function StepDot({
+  index,
+  status,
+  cool = false,
+}: {
+  index: number;
+  status: StepStatus;
+  cool?: boolean;
+}) {
   const base =
-    "relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full border text-[12px] font-semibold";
+    "relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full border text-[12px] font-semibold amount-figure";
+  // The shield step completes in the cool accent — privacy reads differently.
+  const accent = cool ? "var(--cool)" : "var(--volt)";
   if (status === "done") {
     return (
-      <span className={`${base} border-volt bg-volt text-ink-950`}>
+      <span
+        className={`${base} text-ink-950`}
+        style={{
+          borderColor: accent,
+          background: accent,
+          boxShadow: `0 0 16px -4px color-mix(in oklab, ${accent} 60%, transparent)`,
+        }}
+      >
         <CheckIcon />
       </span>
     );
@@ -114,8 +135,12 @@ function StepDot({ index, status }: { index: number; status: StepStatus }) {
   if (status === "running") {
     return (
       <span
-        className={`${base} animate-slip-pulse border-volt text-volt`}
-        style={{ background: "color-mix(in oklab, var(--volt) 12%, transparent)" }}
+        className={`${base} animate-slip-pulse`}
+        style={{
+          borderColor: accent,
+          color: accent,
+          background: `color-mix(in oklab, ${accent} 12%, transparent)`,
+        }}
       >
         {index}
       </span>
@@ -149,7 +174,9 @@ function StatusTag({ status }: { status: StepStatus }) {
   const tag = map[status];
   if (!tag) return null;
   return (
-    <span className={`text-[10px] uppercase tracking-wide ${tag.cls}`}>
+    <span
+      className={`rounded-full border border-[var(--hair)] bg-ink-850 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.1em] ${tag.cls}`}
+    >
       {tag.label}
     </span>
   );

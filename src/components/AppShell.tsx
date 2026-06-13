@@ -40,12 +40,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <li key={href} className="flex-1">
                 <Link
                   href={href}
-                  className={`flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium transition-colors ${
+                  className={`relative flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition-colors ${
                     active
                       ? "text-volt"
                       : "text-text-faint hover:text-text-dim"
                   }`}
                 >
+                  {active && (
+                    <span
+                      aria-hidden
+                      className="absolute -top-2 h-0.5 w-7 rounded-full bg-volt shadow-[0_0_8px_var(--volt)]"
+                    />
+                  )}
                   <Icon active={active} />
                   {label}
                 </Link>
@@ -61,7 +67,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 function Wordmark() {
   return (
     <span className="flex items-center gap-2">
-      <span className="grid h-7 w-7 place-items-center rounded-lg bg-volt text-ink-950">
+      <span className="grid h-7 w-7 place-items-center rounded-lg bg-volt text-ink-950 shadow-[0_0_20px_-4px_var(--volt)]">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
           <path
             d="M5 14.5 11 6l2 6 6-2-8 8.5L9 12z"
@@ -69,7 +75,7 @@ function Wordmark() {
           />
         </svg>
       </span>
-      <span className="text-[17px] font-semibold tracking-tight">Slip</span>
+      <span className="display text-[18px] font-bold">Slip</span>
     </span>
   );
 }

@@ -42,8 +42,8 @@ export default function SuccessCard({ result, recipient, onSendAnother }: Props)
   }
 
   return (
-    <div className="animate-slip-rise flex flex-col items-center text-center">
-      <span className="grid h-16 w-16 place-items-center rounded-full bg-volt text-ink-950">
+    <div className="flex flex-col items-center text-center">
+      <span className="rise relative mt-2 grid h-16 w-16 place-items-center rounded-full bg-volt text-ink-950 shadow-[0_0_48px_-8px_var(--volt)]">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
           <path
             d="m5 12.5 4.5 4.5L19 7"
@@ -55,42 +55,40 @@ export default function SuccessCard({ result, recipient, onSendAnother }: Props)
         </svg>
       </span>
 
-      <h2 className="mt-5 text-[26px] font-semibold tracking-tight">
-        Sent {amount}
+      <h2 className="rise display mt-5 text-[28px] font-semibold">
+        Sent <span className="amount-figure">{amount}</span>
       </h2>
-      <p className="mt-1 text-[15px] text-text-dim">
-        to <span className="font-medium text-text">{recipient}</span>
+      <p className="rise mt-1 text-[15px] text-text-dim">
+        to <span className="font-semibold text-text">{recipient}</span>
       </p>
 
-      <div className="mt-7 w-full rounded-2xl border border-[var(--hair)] bg-ink-850 p-5">
-        <p className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
-          Their claim link
-        </p>
+      <div className="card card-pop rise mt-7 w-full p-5">
+        <p className="kicker text-left">Their claim link</p>
 
         <div className="mt-4 grid place-items-center">
           {claimUrl ? (
-            <div className="rounded-xl bg-white p-3">
+            <div className="rounded-2xl bg-white p-3.5 shadow-[0_0_0_1px_var(--hair-strong),0_16px_48px_-16px_#000c]">
               <QRCode
                 value={claimUrl}
                 size={168}
                 bgColor="#ffffff"
-                fgColor="#07080a"
+                fgColor="#060708"
                 level="M"
               />
             </div>
           ) : (
-            <div className="h-[192px] w-[192px] animate-slip-pulse rounded-xl bg-ink-700" />
+            <div className="h-[192px] w-[192px] animate-slip-pulse rounded-2xl bg-ink-700" />
           )}
         </div>
 
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-900 p-2 pl-3">
-          <span className="flex-1 truncate text-left font-mono text-[12px] text-text-dim">
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-950/60 p-2 pl-3">
+          <span className="hash flex-1 truncate text-left text-[12px] text-text-dim">
             {claimUrl || "preparing link…"}
           </span>
           <button
             onClick={copy}
             disabled={!claimUrl}
-            className="focus-volt shrink-0 rounded-lg bg-volt px-3 py-1.5 text-[12px] font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="btn-volt focus-volt shrink-0 rounded-lg px-3.5 py-1.5 text-[12px] font-bold disabled:opacity-40"
           >
             {copied ? "Copied" : "Copy"}
           </button>
@@ -103,13 +101,13 @@ export default function SuccessCard({ result, recipient, onSendAnother }: Props)
         </p>
       </div>
 
-      <p className="mt-4 text-[12px] font-medium text-text-dim">
+      <p className="rise mt-4 text-[12.5px] font-semibold text-text-dim">
         They&apos;ll tap once. No wallet, no gas.
       </p>
 
       <button
         onClick={onSendAnother}
-        className="focus-volt mt-6 text-[14px] font-medium text-text-dim transition-colors hover:text-text"
+        className="focus-volt rise mt-6 rounded-xl border border-[var(--hair)] px-5 py-2.5 text-[14px] font-semibold text-text-dim transition-colors hover:border-[var(--hair-strong)] hover:text-text"
       >
         Send another
       </button>

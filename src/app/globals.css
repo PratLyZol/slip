@@ -1,26 +1,28 @@
 @import "tailwindcss";
 
 /*
-  Slip — dark, confident, consumer-fintech.
-  Distinctive accent: a warm electric lime ("voltage") against near-black ink,
-  with a single cool counter-accent for the privacy story. Mobile-first.
+  Slip — "private ledger". Dark, confident, consumer-fintech.
+  One hot accent (voltage lime) against near-black ink; a single cool
+  counter-accent (mint) reserved exclusively for the privacy story.
+  Display: Bricolage Grotesque. Figures + hashes: Spline Sans Mono.
 */
 
 :root {
-  --ink-950: #07080a;
-  --ink-900: #0b0d10;
-  --ink-850: #101317;
-  --ink-800: #161a20;
-  --ink-700: #1f242c;
-  --ink-600: #2a313b;
-  --hair: #ffffff14;
+  --ink-950: #060708;
+  --ink-900: #0a0c0e;
+  --ink-850: #0f1215;
+  --ink-800: #151a1e;
+  --ink-700: #1e242a;
+  --ink-600: #2a323a;
+  --hair: #ffffff12;
+  --hair-strong: #ffffff22;
 
-  --text: #f4f6f8;
-  --text-dim: #9aa3ad;
-  --text-faint: #5e6670;
+  --text: #f2f5f3;
+  --text-dim: #98a29b;
+  --text-faint: #5c6660;
 
-  --volt: #c8f24a; /* primary accent */
-  --volt-deep: #9fd11f;
+  --volt: #cdf24a; /* primary accent */
+  --volt-deep: #a3d11f;
   --cool: #5ee0c8; /* privacy counter-accent */
   --danger: #ff6b6b;
 
@@ -48,8 +50,8 @@
   --color-cool: var(--cool);
   --color-danger: var(--danger);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-figures);
 }
 
 html,
@@ -59,29 +61,122 @@ body {
 }
 
 body {
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-display), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01" on;
 }
 
-/* App canvas: subtle vignette so the phone frame reads as a device. */
+/* ---- Atmosphere ------------------------------------------------------- */
+
+/* App canvas: vignette + a faint volt aurora high above the fold. */
 .app-canvas {
   background:
-    radial-gradient(120% 80% at 50% -10%, #14181d 0%, var(--ink-950) 55%),
+    radial-gradient(
+      90% 50% at 50% -18%,
+      color-mix(in oklab, var(--volt) 9%, transparent) 0%,
+      transparent 60%
+    ),
+    radial-gradient(120% 80% at 50% -10%, #12161a 0%, var(--ink-950) 55%),
     var(--ink-950);
 }
 
-/* Numpad-friendly big amount: tabular figures, no jitter. */
+/* Film grain over everything — sells the "printed ledger" texture. */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+/* Card recipe: layered surface + gradient hairline that catches the light. */
+.card {
+  position: relative;
+  border-radius: 1.25rem;
+  border: 1px solid var(--hair);
+  background:
+    linear-gradient(180deg, #ffffff07 0%, transparent 38%),
+    var(--ink-900);
+}
+.card-pop {
+  box-shadow:
+    0 1px 0 #ffffff0a inset,
+    0 24px 48px -24px #000000cc;
+}
+
+/* Privacy surfaces glow cool, never volt. */
+.card-shielded {
+  border-color: color-mix(in oklab, var(--cool) 28%, transparent);
+  background:
+    radial-gradient(
+      120% 120% at 50% 0%,
+      color-mix(in oklab, var(--cool) 8%, transparent) 0%,
+      transparent 60%
+    ),
+    var(--ink-900);
+}
+
+/* ---- Type ------------------------------------------------------------- */
+
+/* Big money: mono, tabular, tight — reads like a terminal ledger. */
 .amount-figure {
+  font-family: var(--font-figures), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.display {
+  font-family: var(--font-display), system-ui, sans-serif;
   letter-spacing: -0.02em;
 }
 
-/* Tasteful focus ring matching the accent. */
+.hash {
+  font-family: var(--font-figures), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  word-break: break-all;
+}
+
+.kicker {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+/* ---- Interaction ------------------------------------------------------ */
+
 .focus-volt:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--volt) 70%, transparent);
   outline-offset: 2px;
 }
+
+/* Primary CTA: volt slab with a hot edge + press feedback. */
+.btn-volt {
+  background: linear-gradient(180deg, var(--volt) 0%, var(--volt-deep) 130%);
+  color: var(--ink-950);
+  box-shadow:
+    0 1px 0 #ffffff66 inset,
+    0 12px 32px -12px color-mix(in oklab, var(--volt) 55%, transparent);
+  transition:
+    transform 0.12s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+.btn-volt:not(:disabled):hover {
+  box-shadow:
+    0 1px 0 #ffffff77 inset,
+    0 16px 44px -12px color-mix(in oklab, var(--volt) 70%, transparent);
+}
+.btn-volt:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+/* ---- Motion ----------------------------------------------------------- */
 
 @keyframes slip-pulse {
   0%,
@@ -99,7 +194,7 @@ body {
 @keyframes slip-rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -107,12 +202,60 @@ body {
   }
 }
 .animate-slip-rise {
-  animation: slip-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: slip-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Staggered page load: tag siblings with .rise and they cascade in. */
+.rise {
+  animation: slip-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.rise:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.rise:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.rise:nth-child(4) {
+  animation-delay: 0.18s;
+}
+.rise:nth-child(5) {
+  animation-delay: 0.24s;
+}
+.rise:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+/* Shield shimmer for the private leg — a slow scan of cool light. */
+@keyframes slip-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.shield-scan {
+  position: relative;
+  overflow: hidden;
+}
+.shield-scan::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklab, var(--cool) 10%, transparent) 50%,
+    transparent 70%
+  );
+  animation: slip-scan 3.2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-slip-pulse,
-  .animate-slip-rise {
+  .animate-slip-rise,
+  .rise,
+  .shield-scan::before {
     animation: none;
   }
 }

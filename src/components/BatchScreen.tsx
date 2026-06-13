@@ -148,11 +148,11 @@ export default function BatchScreen() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="pb-5 pt-2">
-        <span className="rounded-full border border-[var(--hair)] bg-ink-850 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-text-faint">
+      <header className="rise pb-5 pt-2">
+        <span className="rounded-full border border-volt/25 bg-volt/[0.06] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-volt">
           Batch payout
         </span>
-        <h1 className="mt-3 text-[24px] font-semibold tracking-tight">
+        <h1 className="display mt-3 text-[26px] font-semibold">
           Pay a whole list
         </h1>
         <p className="mt-2 text-[14px] leading-snug text-text-dim">
@@ -219,7 +219,7 @@ function ComposeView({
       <div className="flex items-center justify-between">
         <label
           htmlFor="batch-input"
-          className="text-[12px] font-medium uppercase tracking-wide text-text-faint"
+          className="kicker"
         >
           Your list
         </label>
@@ -247,9 +247,9 @@ function ComposeView({
       </p>
 
       {parsed.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-[var(--hair)] bg-ink-900/60 p-3">
+        <div className="card animate-slip-rise mt-4 p-3">
           <div className="mb-2 flex items-center justify-between px-1">
-            <span className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
+            <span className="kicker">
               Preview
             </span>
             <span className="text-[11px] text-text-faint">
@@ -295,7 +295,7 @@ function ComposeView({
       <button
         onClick={onPay}
         disabled={validCount === 0}
-        className="focus-volt mt-6 w-full rounded-2xl bg-volt py-4 text-[16px] font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+        className="btn-volt focus-volt mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-30"
       >
         {validCount === 0
           ? "Add at least one valid row"
@@ -329,7 +329,7 @@ function StatusView({
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex items-center justify-between">
-        <p className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
+        <p className="kicker">
           {phase === "running"
             ? "Paying…"
             : restored
@@ -357,7 +357,7 @@ function StatusView({
           <button
             onClick={onDownloadCsv}
             disabled={readyCount === 0}
-            className="focus-volt w-full rounded-2xl bg-volt py-3.5 text-[15px] font-semibold text-ink-950 transition-opacity hover:opacity-90 disabled:opacity-30"
+            className="btn-volt focus-volt w-full rounded-2xl py-3.5 text-[15px] font-bold disabled:opacity-30"
           >
             Download links CSV
           </button>
@@ -389,7 +389,7 @@ function BatchRowCard({ row }: { row: TableRow }) {
   }
 
   return (
-    <li className="rounded-2xl border border-[var(--hair)] bg-ink-850 p-3">
+    <li className="card animate-slip-rise p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[14px] font-medium text-text">
@@ -411,13 +411,13 @@ function BatchRowCard({ row }: { row: TableRow }) {
 
       {row.status === "ready" && row.claimUrl && (
         <>
-          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-900 p-1.5 pl-3">
-            <span className="flex-1 truncate font-mono text-[11px] text-text-dim">
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-950/60 p-1.5 pl-3">
+            <span className="flex-1 hash truncate text-text-dim">
               {row.claimUrl}
             </span>
             <button
               onClick={copy}
-              className="focus-volt shrink-0 rounded-lg bg-volt px-2.5 py-1 text-[11px] font-semibold text-ink-950 transition-opacity hover:opacity-90"
+              className="btn-volt focus-volt shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold"
             >
               {copied ? "Copied" : "Copy"}
             </button>
@@ -460,7 +460,7 @@ function BatchStatusTag({ status }: { status: BatchRowStatus }) {
   const map: Record<BatchRowStatus, { label: string; cls: string }> = {
     pending: { label: "pending", cls: "text-text-faint" },
     resolving: { label: "resolving", cls: "text-volt" },
-    shielding: { label: "shielding", cls: "text-volt" },
+    shielding: { label: "shielding", cls: "text-cool" },
     ready: { label: "link ready", cls: "text-text-faint" },
     failed: { label: "failed", cls: "text-danger" },
   };
@@ -468,7 +468,7 @@ function BatchStatusTag({ status }: { status: BatchRowStatus }) {
   const animate = status === "resolving" || status === "shielding";
   return (
     <span
-      className={`text-[10px] uppercase tracking-wide ${t.cls} ${animate ? "animate-slip-pulse" : ""}`}
+      className={`rounded-full border border-[var(--hair)] bg-ink-850 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.1em] ${t.cls} ${animate ? "animate-slip-pulse" : ""}`}
     >
       {t.label}
     </span>
