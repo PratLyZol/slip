@@ -34,6 +34,7 @@ import {
 } from "@/lib/engine/types";
 import { useHash } from "@/lib/useClientValue";
 import { formatUsd, shortAddress } from "@/lib/format";
+import { detectRegion } from "@/lib/region";
 import ClaimSteps from "./ClaimSteps";
 import OtpLogin from "./OtpLogin";
 
@@ -77,7 +78,11 @@ export default function ClaimScreen() {
     setSteps({});
     setOverride({ kind: "claiming", payload });
     try {
-      const result = await runClaim(payload, (s) =>
+      // The recipient's local currency is decided HERE, on their device — not
+      // by the sender. Detect it and override whatever (if anything) is on the
+      // link, so USDC is swapped into their native stablecoin at claim.
+      const claimPayload = { ...payload, region: detectRegion() };
+      const result = await runClaim(claimPayload, (s) =>
         setSteps((prev) => ({ ...prev, [s.step]: s })),
       );
       const receipt = receiptFromResult(result);
@@ -121,7 +126,8 @@ export default function ClaimScreen() {
   // ready | claiming
   const { payload } = phase;
   const amount = formatUsd(Number(payload.amountUsdc));
-  const currency = payload.region === "EU" ? "EURC" : "USDC";
+  // Currency is decided on the claimant's device, not from the link.
+  const currency = detectRegion() === "EU" ? "EURC" : "USDC";
   const account = addressFromSecret(payload.secret);
   const claiming = phase.kind === "claiming";
 
