@@ -1,34 +1,46 @@
 /**
  * POST /api/unlink/authorization-token — Unlink auth-route: authorization token.
  *
- * Wave 0 STUB. The authorization-token half of the Unlink auth routes: the
- * shielded-balance client asks the app server to mint/return an authorization
- * token for the privacy operation. This stub returns a clearly-fake token so
- * the route exists and callers compile. B2 replaces the body with
- * `createUnlinkAuthRoutes(...).authorizationToken`.
+ * The non-custodial browser Unlink client (src/lib/adapters/unlink.ts) asks this
+ * route for a short-lived authorization token scoped to its unlink1 address
+ * before each privacy op. This route delegates to the Unlink SDK's
+ * `createUnlinkAuthRoutes(...).authorizationToken`, which mints the token via
+ * `admin.authorizationTokens.issue` using the server-only admin key
+ * (`UNLINK_API_KEY`). The admin key never reaches the browser.
  *
- * Next 16 App Router route handler — see /api/pregen/route.ts for the signature
- * grounding (next/server, NextRequest/NextResponse, per
+ * Server-only: the admin handle is built LAZILY (inside the handler), never at
+ * module load — so when `UNLINK_API_KEY` is absent the module imports cleanly
+ * and demo mode (which never calls this route) is unaffected. Absent the key, we
+ * return a clear 501 stub.
+ *
+ * Next App Router route handler — accepts the native Request (per
  * node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md).
- *
- * NOTE(Wave 1): no `import "server-only"` yet (stub touches no secret). B2 MUST
- * add it once this route reads UNLINK credentials via config.ts.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import "server-only";
+import { createUnlinkAdmin, createUnlinkAuthRoutes } from "@unlink-xyz/sdk/admin";
+import { UNLINK_API_KEY } from "@/lib/config";
+import { UNLINK_ARC_ENVIRONMENT } from "@/lib/adapters/arc";
 
-interface AuthorizationTokenResponseBody {
-  token: string;
-}
+export async function POST(request: Request) {
+  if (!UNLINK_API_KEY) {
+    // Demo mode never calls this route; without the admin key there is no real
+    // Unlink backend to mint tokens. Fail clearly rather than at import.
+    return Response.json(
+      { error: "UNLINK_API_KEY not configured — real Unlink path disabled." },
+      { status: 501 },
+    );
+  }
 
-export async function POST(_request: NextRequest) {
-  // TODO(B2): createUnlinkAuthRoutes.authorizationToken — delegate to the Unlink
-  // SDK to issue the real authorization token for the shielded operation.
-  // Stubbed to a clearly-fake token for Wave 0 (NOT a real credential).
-  void _request;
-
-  const body: AuthorizationTokenResponseBody = {
-    token: "stub-unlink-authorization-token",
-  };
-  return NextResponse.json(body);
+  const admin = createUnlinkAdmin({
+    environment: UNLINK_ARC_ENVIRONMENT,
+    apiKey: UNLINK_API_KEY,
+  });
+  const routes = createUnlinkAuthRoutes({
+    admin,
+    // Demo/hackathon scope: every caller is trusted. Tighten for prod.
+    authenticate: async () => ({}),
+    authorizeUnlinkAddress: async () => true,
+  });
+  return routes.authorizationToken(request);
 }

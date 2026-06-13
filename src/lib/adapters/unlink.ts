@@ -1,95 +1,100 @@
 /**
- * Unlink adapter — the privacy seam (PRD Phase 3, the bounty).
+ * Unlink adapter — the privacy seam (PLAN.md §1/§3, the bounty).
  *
  * Wraps `@unlink-xyz/sdk` behind a small {@link ShieldOps} interface so the rest
  * of the engine never imports the SDK directly (AGENTS.md: "SDK wiring lives
  * ONLY in adapters"). Two implementations conform to it:
  *
- *  - DEMO ({@link demoShieldOps}): deterministic simulation. Deposit + withdraw
+ *  - DEMO ({@link demoShieldOps}): deterministic simulation. Shield + unshield
  *    produce visible Arc-style tx hashes (the PUBLIC edges); the private
  *    transfer produces NO public artifact — only an opaque proof reference,
  *    modelling exactly what an explorer would show for an Unlink op (a ZK proof
  *    submission with no readable amount or parties).
- *  - REAL ({@link realShieldOps}): the custodial `@unlink-xyz/sdk/client`
- *    against `arc-testnet`. Deterministically derives an Unlink account from the
- *    claim secret (secret → keccak seed → `account.fromSeed`), so the SAME
- *    shielded note is reachable on the claim side from the same secret.
+ *  - REAL ({@link realShieldOps}): the NON-CUSTODIAL `@unlink-xyz/sdk/browser`
+ *    client against `arc-testnet`. The account is DETERMINISTICALLY derived from
+ *    a secret (secret → keccak seed → `account.fromSeed`), so the same shielded
+ *    note is reachable from the same secret. The secret never leaves the client;
+ *    only `register` + `authorization-token` are thin server routes holding the
+ *    admin key. See PLAN.md §0.5 + §3 and docs/research/unlink.md.
  *
- * Privacy architecture (decided): the claim secret derives the claim's Unlink
- * account. Send = shield USDC into the SENDER's Unlink balance → private
- * `transfer` to the CLAIM's unlink address (the leg where amount + the
- * sender↔recipient edge vanish). Claim = re-derive the claim account from the
- * secret → `withdraw` to the recipient's public EOA → then FX.
+ * Privacy architecture (batch-first, PLAN.md §2):
+ *  - `seed = keccak(batchSecret)` derives the SENDER's Unlink account (index 0).
+ *  - `seed = keccak(claimSecret)` derives the CLAIM's Unlink account (index 0).
+ *    DIFFERENT SEEDS, both at accountIndex 0 — not different indices on one seed.
+ *  - Send = shield Σ once into the sender's Unlink balance (faucet, gasless) →
+ *    private `transfer` to each claim's unlink1 address (the leg where amount +
+ *    the sender↔recipient edge vanish).
+ *  - Claim = re-derive the claim account from its secret → `withdraw` to the
+ *    recipient's public EOA (relayer-submitted, recipient pays no gas).
  *
- * The real path may fail without funded testnet USDC / an admin key. Callers
- * (shield.ts / claim.ts) catch and degrade per PRD §8 — the privacy leg behind
- * a flag must NEVER block the end-to-end send.
+ * The real path may fail without an admin key / faucet liquidity. Callers
+ * (engine) catch and degrade per PLAN.md — the privacy leg must NEVER block the
+ * end-to-end demo. Demo mode runs with ZERO credentials.
  *
- * Unlink API notes (verified against the INSTALLED package, not just research —
- * see docs/research/unlink.md "Correction" section):
- *  - There is NO bare `@unlink-xyz/sdk` entry; import from `/client` (custodial).
- *  - `account.fromSeed({ seed: Uint8Array, accountIndex? })` — used for the
- *    deterministic derivation (research only named fromMnemonic).
- *  - `getAddress()` is ASYNC and returns a bech32 `unlink1…` string.
- *  - A `TransactionHandle` carries a NULL `txHash`; the real hash arrives on the
- *    `TransactionResult` returned by `.wait()` — read `result.txHash` there.
- *  - The custodial client needs `register` + `authorizationToken` providers,
- *    which require a backend admin key (`createUnlinkAdmin`).
+ * Unlink API notes (verified against the INSTALLED package @0.3.0-canary.598 —
+ * see docs/research/unlink.md "Correction" + the browser/admin `.d.ts`):
+ *  - Import `account` + `createUnlinkClient` from `/browser` (non-custodial).
+ *  - `account.fromSeed({ seed: Uint8Array, accountIndex? })` is SYNC and returns
+ *    an `UnlinkLocalAccount`; `getAddress()` on it is ASYNC → bech32 `unlink1…`.
+ *  - Browser client wires `registerUrl` (string) + `authorizationToken: { url }`
+ *    to the two server routes; `ensureRegistered()` POSTs the registration.
+ *  - `faucet.requestPrivateTokens({ token, amount })` shields tokens gaslessly.
+ *    It returns `{ tx_id, status }` (NOT a TransactionHandle — no `.wait()`, and
+ *    the faucet tx is not pollable). We surface `tx_id` on the public shield leg.
+ *  - `transfer` / `withdraw` return a `TransactionHandle`; `.wait()` yields a
+ *    `TransactionResult { txId, status, txHash? }`. Terminal SUCCESS is
+ *    `status === "processed"` — assert it (NOT `!== "failed"`).
+ *  - A private transfer leaves NO public tx hash; we surface `result.txId` as an
+ *    opaque `proofRef` (NOT an explorer link) for the "no readable middle" story.
  */
 
+import { account, createUnlinkClient } from "@unlink-xyz/sdk/browser";
 import { keccak256, type Hex } from "viem";
-import {
-  UNLINK_APP_ID,
-  UNLINK_API_KEY,
-  isDemoMode,
-  isUnlinkConfigured,
-} from "../config";
+import { UNLINK_APP_ID, UNLINK_API_KEY, isDemoMode, isUnlinkConfigured } from "../config";
 import { simLatency, simTx, sleep, fakeTxHash } from "../demo/sim";
 import { UNLINK_ARC_ENVIRONMENT, USDC_ADDRESS, txUrl } from "./arc";
 import type { PrivacyLeg } from "../engine/types";
 
-/** A token + amount (wei string) for a shielded op. */
-export interface ShieldToken {
-  /** ERC-20 token address (USDC on Arc). */
-  token: string;
-  /** Amount in wei (6-decimal USDC) as a decimal string. */
-  amount: string;
-}
-
 /**
  * The privacy interface the engine programs against. Both the real Unlink SDK
- * and the demo simulation implement it. Every op is keyed by the claim
- * `secret` so derivations are deterministic and reproducible.
+ * (browser client) and the demo simulation implement it. Amounts flow as human
+ * `amountUsdc` strings; the adapter converts to wei internally. Accounts derive
+ * deterministically from a secret so derivations are reproducible across the
+ * send and claim sides.
  */
 export interface ShieldOps {
   /** True when this is the real SDK path (vs. the demo simulation). */
   readonly real: boolean;
 
   /**
-   * Resolve the SENDER's own shielded (unlink1…) address — where deposited USDC
-   * lands. In demo this is a deterministic pseudo-address; in real mode it is
-   * the sender account's `getAddress()`.
+   * Resolve the SENDER's own shielded (unlink1…) address — where shielded USDC
+   * lands. Seed = keccak(batchSecret), accountIndex 0.
    */
-  senderUnlinkAddress(secret: Hex): Promise<string>;
+  senderAddress(batchSecret: Hex): Promise<string>;
 
   /**
-   * Resolve the CLAIM's shielded (unlink1…) address — the private-transfer
-   * target, re-derivable on the claim side from the same secret.
+   * Resolve a CLAIM's shielded (unlink1…) address — the private-transfer
+   * target, re-derivable on the claim side. Seed = keccak(claimSecret), index 0.
    */
-  claimUnlinkAddress(secret: Hex): Promise<string>;
+  claimAddress(claimSecret: Hex): Promise<string>;
 
   /**
-   * Shield (deposit) USDC into the sender's Unlink balance. PUBLIC edge — the
-   * funding source + amount are visible on-chain. Returns the deposit leg.
+   * Shield Σ (the batch total) once into the SENDER's Unlink balance via the
+   * gasless faucet. PUBLIC edge — a deposit into the shielded pool. Returns the
+   * shield leg.
    */
-  shield(secret: Hex, t: ShieldToken): Promise<PrivacyLeg>;
+  shieldSender(batchSecret: Hex, amountUsdc: string): Promise<PrivacyLeg>;
 
   /**
-   * Private transfer from the sender's shielded balance to the claim's unlink
+   * Private transfer from the sender's shielded balance to ONE claim's unlink
    * address. THE private middle — no readable amount or parties on-chain.
    * Returns the transfer leg (no tx hash; a proof reference instead).
    */
-  privateTransfer(secret: Hex, t: ShieldToken): Promise<PrivacyLeg>;
+  privateTransfer(
+    batchSecret: Hex,
+    claimSecret: Hex,
+    amountUsdc: string,
+  ): Promise<PrivacyLeg>;
 
   /**
    * Unshield (withdraw) from the claim's shielded balance to a public EOA.
@@ -97,13 +102,10 @@ export interface ShieldOps {
    * Returns the unshield leg.
    */
   unshield(
-    secret: Hex,
+    claimSecret: Hex,
     recipientEvmAddress: string,
-    t: ShieldToken,
+    amountUsdc: string,
   ): Promise<PrivacyLeg>;
-
-  /** Shielded balance for the claim account, human-units string (best effort). */
-  shieldedBalance(secret: Hex): Promise<string>;
 }
 
 /** USDC amount (human units) → 6-decimal wei string for Unlink. */
@@ -113,6 +115,12 @@ export function usdcToWei(amountHuman: string): string {
   const fracPadded = (frac + "000000").slice(0, 6);
   const wei = `${whole}${fracPadded}`.replace(/^0+(?=\d)/, "");
   return wei.length ? wei : "0";
+}
+
+/** A token + amount (wei string) for a shielded op (USDC on Arc). */
+export interface ShieldToken {
+  token: string;
+  amount: string;
 }
 
 /** Default token bundle: USDC at the given human amount. */
@@ -144,21 +152,21 @@ function demoUnlinkAddress(secret: Hex, role: string): string {
 const demoShieldOps: ShieldOps = {
   real: false,
 
-  async senderUnlinkAddress(secret) {
-    return demoUnlinkAddress(secret, "sender");
+  async senderAddress(batchSecret) {
+    return demoUnlinkAddress(batchSecret, "sender");
   },
 
-  async claimUnlinkAddress(secret) {
-    return demoUnlinkAddress(secret, "claim");
+  async claimAddress(claimSecret) {
+    return demoUnlinkAddress(claimSecret, "claim");
   },
 
-  async shield(secret, t) {
-    // PUBLIC edge: a visible deposit tx into the shielded pool.
+  async shieldSender(batchSecret, amountUsdc) {
+    // PUBLIC edge: a visible deposit of Σ into the shielded pool.
     await sleep(simLatency(500, 1200));
-    const tx = simTx("unlink-deposit", secret, t.token, t.amount);
+    const tx = simTx("unlink-shield", batchSecret, usdcToWei(amountUsdc));
     return {
       kind: "shield",
-      label: "Deposit into shielded balance",
+      label: "Shield batch total into private pool",
       public: true,
       txHash: tx.hash,
       explorerUrl: tx.explorerUrl,
@@ -166,12 +174,12 @@ const demoShieldOps: ShieldOps = {
     };
   },
 
-  async privateTransfer(secret) {
+  async privateTransfer(batchSecret, claimSecret) {
     // THE private middle: a ZK proof submission. NO readable amount/parties and
     // NO ordinary tx hash to link — only an opaque proof/nullifier reference,
     // modelling what an explorer would actually show for an Unlink transfer.
     await sleep(simLatency(700, 1600));
-    const proof = fakeTxHash("unlink-transfer-proof", secret);
+    const proof = fakeTxHash("unlink-transfer-proof", batchSecret, claimSecret);
     return {
       kind: "transfer",
       label: "Private transfer (shielded)",
@@ -181,10 +189,10 @@ const demoShieldOps: ShieldOps = {
     };
   },
 
-  async unshield(secret, recipientEvmAddress, t) {
+  async unshield(claimSecret, recipientEvmAddress, amountUsdc) {
     // PUBLIC edge: a visible withdraw tx to the recipient EOA.
     await sleep(simLatency(500, 1200));
-    const tx = simTx("unlink-withdraw", secret, recipientEvmAddress, t.amount);
+    const tx = simTx("unlink-withdraw", claimSecret, recipientEvmAddress, usdcToWei(amountUsdc));
     return {
       kind: "unshield",
       label: "Withdraw from shielded balance",
@@ -194,123 +202,96 @@ const demoShieldOps: ShieldOps = {
       simulated: true,
     };
   },
-
-  async shieldedBalance(secret) {
-    // Deterministic, plausible-looking shielded balance for the demo proof view.
-    void secret;
-    return "0.00";
-  },
 };
 
 // ---------------------------------------------------------------------------
-// REAL implementation — @unlink-xyz/sdk/client against arc-testnet.
+// REAL implementation — @unlink-xyz/sdk/browser against arc-testnet.
+//
+// Non-custodial: the account is derived in the BROWSER from a secret and the
+// secret never leaves the client. Only the two thin auth routes (register +
+// authorization-token) run server-side with the admin key. This is why there is
+// NO `typeof window` guard and NO dynamic import indirection — the browser
+// client is a normal client-side static import.
 // ---------------------------------------------------------------------------
 
-/**
- * Build a custodial Unlink client whose account is DETERMINISTICALLY derived
- * from the claim secret. Same secret → same shielded note, on both the send and
- * claim sides. Requires an admin key (server-only) to register + authorize.
- *
- * `roleIndex` separates the SENDER account (0) from the CLAIM account (1) via
- * `accountIndex` so the private transfer has a distinct recipient. Both derive
- * from the same 32-byte seed = keccak(secret).
- */
-async function buildRealClient(secret: Hex, roleIndex: 0 | 1) {
-  if (!UNLINK_API_KEY) {
-    throw new Error("UNLINK_API_KEY missing — cannot build real Unlink client.");
-  }
-  // The custodial client + admin API are SERVER-ONLY (the admin key never ships
-  // to the browser; @unlink-xyz/sdk/admin sets `"browser": null` in its exports
-  // for exactly this reason). Guard so a stray client-side call fails loudly
-  // rather than bundling server code into the browser.
-  if (typeof window !== "undefined") {
-    throw new Error(
-      "Real Unlink path is server-only (admin key) — not callable in the browser.",
-    );
-  }
-  // Runtime-resolved specifiers keep the bundler from statically pulling the
-  // server-only `/admin` subpath into the browser bundle. The path still
-  // type-checks and is reachable server-side when UNLINK_API_KEY is present.
-  const clientMod = "@unlink-xyz/sdk/client";
-  const adminMod = "@unlink-xyz/sdk/admin";
-  const { account, createUnlinkClient } = (await import(
-    /* webpackIgnore: true */ /* turbopackIgnore: true */ clientMod
-  )) as typeof import("@unlink-xyz/sdk/client");
-  const { createUnlinkAdmin } = (await import(
-    /* webpackIgnore: true */ /* turbopackIgnore: true */ adminMod
-  )) as typeof import("@unlink-xyz/sdk/admin");
-
-  // secret → 32-byte deterministic seed for account derivation.
+/** secret → 32-byte deterministic seed (keccak) for account derivation. */
+function seedFromSecret(secret: Hex): Uint8Array {
   const seedHex = keccak256(secret);
-  const seed = Uint8Array.from(
+  return Uint8Array.from(
     seedHex.slice(2).match(/.{2}/g)!.map((b) => parseInt(b, 16)),
   );
-  const unlinkAccount = account.fromSeed({ seed, accountIndex: roleIndex });
-  const unlinkAddress = await unlinkAccount.getAddress();
+}
 
-  const admin = createUnlinkAdmin({
-    environment: UNLINK_ARC_ENVIRONMENT,
-    apiKey: UNLINK_API_KEY,
-  });
-
+/**
+ * Build a non-custodial browser Unlink client whose account is derived from
+ * `secret` (seed = keccak(secret), accountIndex 0). The two server routes carry
+ * the admin key; the client posts its registration to `registerUrl` and fetches
+ * authorization tokens from `authorizationToken.url`. `ensureRegistered()` runs
+ * once before any mutating op.
+ */
+async function buildClient(secret: Hex) {
+  const unlinkAccount = account.fromSeed({ seed: seedFromSecret(secret), accountIndex: 0 });
   const client = createUnlinkClient({
     environment: UNLINK_ARC_ENVIRONMENT,
     account: unlinkAccount,
-    register: (payload) => admin.users.register(payload),
-    authorizationToken: {
-      provider: () => admin.authorizationTokens.issue({ unlinkAddress }),
-    },
+    registerUrl: "/api/unlink/register",
+    authorizationToken: { url: "/api/unlink/authorization-token" },
   });
-
   await client.ensureRegistered();
+  const unlinkAddress = await unlinkAccount.getAddress();
   return { client, unlinkAddress };
 }
 
 const realShieldOps: ShieldOps = {
   real: true,
 
-  async senderUnlinkAddress(secret) {
-    const { unlinkAddress } = await buildRealClient(secret, 0);
-    return unlinkAddress;
+  async senderAddress(batchSecret) {
+    const acct = account.fromSeed({ seed: seedFromSecret(batchSecret), accountIndex: 0 });
+    return acct.getAddress();
   },
 
-  async claimUnlinkAddress(secret) {
-    const { unlinkAddress } = await buildRealClient(secret, 1);
-    return unlinkAddress;
+  async claimAddress(claimSecret) {
+    const acct = account.fromSeed({ seed: seedFromSecret(claimSecret), accountIndex: 0 });
+    return acct.getAddress();
   },
 
-  async shield(secret, t) {
-    const { client } = await buildRealClient(secret, 0);
-    const handle = await client.depositWithApproval({
-      token: t.token,
-      amount: t.amount,
+  async shieldSender(batchSecret, amountUsdc) {
+    const { client } = await buildClient(batchSecret);
+    // SHIELD Σ once via the gasless faucet (walletless) — this IS wired. Returns
+    // { tx_id, status } — NOT a TransactionHandle, and the faucet tx is not
+    // pollable, so we surface tx_id as the public-edge marker (no on-chain
+    // explorer hash to link).
+    //
+    // If Σ exceeds the faucet per-call cap, callers must split into ⌈Σ/cap⌉
+    // shieldSender calls. The alternative `depositWithApproval` cap-overflow
+    // fallback (needs a gas-funded sender EOA) is OUT OF SCOPE for the demo path
+    // and is // NOT YET WIRED.
+    const res = await client.faucet.requestPrivateTokens({
+      token: USDC_ADDRESS,
+      amount: usdcToWei(amountUsdc),
     });
-    const result = await handle.wait();
-    if (result.status === "failed") {
-      throw new Error("Unlink deposit failed.");
-    }
-    const hash = (result.txHash ?? undefined) as Hex | undefined;
     return {
       kind: "shield",
-      label: "Deposit into shielded balance",
+      label: "Shield batch total into private pool",
       public: true,
-      txHash: hash,
-      explorerUrl: hash ? txUrl(hash) : undefined,
+      // The faucet returns an internal tx_id (not an on-chain hash); surface it
+      // as a proofRef so the shield is traceable without faking an explorer link.
+      proofRef: res.tx_id,
       simulated: false,
     };
   },
 
-  async privateTransfer(secret, t) {
-    const { client } = await buildRealClient(secret, 0);
-    const recipientAddress = await this.claimUnlinkAddress(secret);
+  async privateTransfer(batchSecret, claimSecret, amountUsdc) {
+    const { client } = await buildClient(batchSecret);
+    const recipientAddress = await this.claimAddress(claimSecret);
     const handle = await client.transfer({
       recipientAddress,
-      token: t.token,
-      amount: t.amount,
+      token: USDC_ADDRESS,
+      amount: usdcToWei(amountUsdc),
     });
     const result = await handle.wait();
-    if (result.status === "failed") {
-      throw new Error("Unlink private transfer failed.");
+    if (result.status !== "processed") {
+      throw new Error(`Unlink private transfer not processed: ${result.status}`);
     }
     // No public tx hash for a private transfer — the relayer submits a ZK proof.
     // We surface the txId as the opaque proof reference (NOT an explorer link).
@@ -323,16 +304,16 @@ const realShieldOps: ShieldOps = {
     };
   },
 
-  async unshield(secret, recipientEvmAddress, t) {
-    const { client } = await buildRealClient(secret, 1);
+  async unshield(claimSecret, recipientEvmAddress, amountUsdc) {
+    const { client } = await buildClient(claimSecret);
     const handle = await client.withdraw({
       recipientEvmAddress,
-      token: t.token,
-      amount: t.amount,
+      token: USDC_ADDRESS,
+      amount: usdcToWei(amountUsdc),
     });
     const result = await handle.wait();
-    if (result.status === "failed") {
-      throw new Error("Unlink withdraw failed.");
+    if (result.status !== "processed") {
+      throw new Error(`Unlink withdraw not processed: ${result.status}`);
     }
     const hash = (result.txHash ?? undefined) as Hex | undefined;
     return {
@@ -343,12 +324,6 @@ const realShieldOps: ShieldOps = {
       explorerUrl: hash ? txUrl(hash) : undefined,
       simulated: false,
     };
-  },
-
-  async shieldedBalance(secret) {
-    const { client } = await buildRealClient(secret, 1);
-    const bal = await client.balanceOf(USDC_ADDRESS);
-    return bal ?? "0";
   },
 };
 

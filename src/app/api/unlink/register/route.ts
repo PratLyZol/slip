@@ -1,31 +1,46 @@
 /**
  * POST /api/unlink/register — Unlink auth-route: register.
  *
- * Wave 0 STUB. Unlink's SDK expects the app to host a pair of server routes
- * (register + authorization-token) that the shielded-balance flow calls. This
- * is the register half, returning a 200 ack so the route exists and the wiring
- * compiles. B2 replaces the body with `createUnlinkAuthRoutes(...).register`.
+ * The non-custodial browser Unlink client (src/lib/adapters/unlink.ts) POSTs its
+ * public registration payload here; this route delegates to the Unlink SDK's
+ * `createUnlinkAuthRoutes(...).register`, which validates it and calls
+ * `admin.users.register` with the server-only admin key (`UNLINK_API_KEY`). The
+ * secret never reaches this route — only the public registration material does.
  *
- * Next 16 App Router route handler — see /api/pregen/route.ts for the signature
- * grounding (next/server, NextRequest/NextResponse, per
+ * Server-only: the admin key is privileged (project-scoped) and must never ship
+ * to the browser. We build the admin handle LAZILY (inside the handler), never
+ * at module load — so when `UNLINK_API_KEY` is absent the module still imports
+ * cleanly and demo mode (which never calls this route) is unaffected. Absent the
+ * key, we return a clear 501 stub.
+ *
+ * Next App Router route handler — accepts the native Request (per
  * node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md).
- *
- * NOTE(Wave 1): no `import "server-only"` yet (stub touches no secret). B2 MUST
- * add it once this route reads UNLINK credentials via config.ts.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import "server-only";
+import { createUnlinkAdmin, createUnlinkAuthRoutes } from "@unlink-xyz/sdk/admin";
+import { UNLINK_API_KEY } from "@/lib/config";
+import { UNLINK_ARC_ENVIRONMENT } from "@/lib/adapters/arc";
 
-interface UnlinkRegisterResponseBody {
-  ok: boolean;
-}
+export async function POST(request: Request) {
+  if (!UNLINK_API_KEY) {
+    // Demo mode never calls this route; without the admin key there is no real
+    // Unlink backend to register against. Fail clearly rather than at import.
+    return Response.json(
+      { error: "UNLINK_API_KEY not configured — real Unlink path disabled." },
+      { status: 501 },
+    );
+  }
 
-export async function POST(_request: NextRequest) {
-  // TODO(B2): createUnlinkAuthRoutes.register — delegate to the Unlink SDK's
-  // register handler (validates the client's registration request and persists
-  // / proxies it per the canary SDK contract). Stubbed to a 200 ack for Wave 0.
-  void _request;
-
-  const body: UnlinkRegisterResponseBody = { ok: true };
-  return NextResponse.json(body);
+  const admin = createUnlinkAdmin({
+    environment: UNLINK_ARC_ENVIRONMENT,
+    apiKey: UNLINK_API_KEY,
+  });
+  const routes = createUnlinkAuthRoutes({
+    admin,
+    // Demo/hackathon scope: every caller is trusted. Tighten for prod.
+    authenticate: async () => ({}),
+    authorizeUnlinkAddress: async () => true,
+  });
+  return routes.register(request);
 }
