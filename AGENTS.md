@@ -8,7 +8,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Slip — build conventions
 
-Read `docs/PRD.md` first. Research findings with verified APIs live in `docs/research/` (arc.md, dynamic.md, unlink.md) — **use those, never invent SDK signatures**.
+**`docs/PLAN.md` is the current source of truth** — it folds in verified findings + locked
+decisions and **supersedes the PRD and this file's specifics where they conflict** (key
+deltas: pregen identity wallets replace the counterfactual payout; CCTP for aggregation;
+account abstraction dropped; **batch-first**; StableFX is a real flag-gated integration).
+Read `docs/PLAN.md` first, then `docs/PRD.md` for product context. Verified SDK APIs live in
+`docs/research/` (arc.md, dynamic.md, unlink.md) — **use those, never invent SDK signatures**.
 
 ## Architecture
 
@@ -18,19 +23,23 @@ One engine, two surfaces. The engine is the seven-step send pipeline (PRD §2).
 src/
   app/                  # App Router pages: / (send), /claim, /batch, /private (proof view), /architecture
   components/           # UI components
+  app/api/              # server routes (hold secrets): pregen, unlink/register,
+                        #   unlink/authorization-token, fx
   lib/
-    engine/             # the seven steps, each a typed module
-      types.ts          # shared types: SendRequest, ClaimPayload, EngineResult, Region...
-      resolve.ts        # step 1: name -> address (ENS public-resolver read, no SDK)
-      aggregate.ts      # step 2: sender assets -> USDC (Dynamic)
-      counterfactual.ts # step 3: claim secret -> deterministic recipient account
-      shield.ts         # step 4: Unlink shielded leg
-      settle.ts         # step 5: settle USDC for the claim
-      claim.ts          # step 7: deploy/withdraw + FX at claim
+    engine/             # the send/claim pipeline (batch-first; N=1 = single send)
+      types.ts          # shared types: SendRequest(recipients[]), ClaimPayload v2, Region...
+      resolve.ts        # name/.eth -> address (ENS read); email/phone -> pregen via /api/pregen
+      aggregate.ts      # bridge sender USDC onto Arc via Circle CCTP (Dynamic has NO swap)
+      counterfactual.ts # LEGACY/demo-only — payout address now comes from Dynamic pregen
+      shield.ts         # Unlink shielded leg (browser client + gasless faucet shield)
+      claim.ts          # relayer-submitted Unlink withdraw + FX at claim (NO AA/deploy)
     adapters/           # SDK wiring lives ONLY here, behind interfaces
-      arc.ts            # chain config, token addresses, explorer URLs
-      unlink.ts         # @unlink-xyz/sdk@canary wrapper
-      fx.ts             # Arc StableFX / fallback
+      arc.ts            # Arc + Base Sepolia chain config, token/CCTP addresses, explorer
+      unlink.ts         # @unlink-xyz/sdk@canary — /browser client + /admin (server routes)
+      pregen.ts         # Dynamic pregenerated wallets (waas/create) — server-only
+      bridge.ts         # Circle CCTP aggregation (@circle-fin/bridge-kit)
+      fx-stablefx.ts    # Circle StableFX (real on-chain settle; sim fallback)
+      balance.ts        # USDC balance reads (viem)
     demo/               # demo-mode implementations of the same interfaces
 ```
 
@@ -38,8 +47,8 @@ src/
 
 - Arc testnet chain ID **5042002**, RPC `https://rpc.testnet.arc.network`, explorer `https://testnet.arcscan.app`, faucet `https://faucet.circle.com` (dispenses USDC + EURC).
 - USDC `0x3600000000000000000000000000000000000000` (native gas; 6 decimals as ERC-20, 18 in native gas accounting). EURC `0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a` (6 decimals).
-- **StableFX requires a Circle-issued API key** (not permissionless) — the real FX adapter must be a flag-gated stub unless a key is provided; demo mode simulates the quote+settle.
-- ERC-4337 supported but no canonical EntryPoint published — comes from the AA provider (Dynamic/ZeroDev/Pimlico).
+- **StableFX** requires a **contact-a-rep** Circle API key (`sales@circle.com`). It is a REAL flag-gated integration, not a fake: verified that TEST mode settles **real on-chain** PvP on Arc (real `settlementTransactionHash`, real EURC to recipient) — only the *quote pricing* is sandbox. Default to the demo simulation; flip real when the key is present (residual: a testnet maker must complete the PvP).
+- **Account abstraction is DROPPED.** The claim is gasless via Unlink's relayer (recipient pays nothing), so no paymaster/4337/ZeroDev. (FYI EntryPoint v0.6/v0.7 *are* deployed on Arc, but we don't use them; ZeroDev's hosted bundler does not serve Arc anyway.)
 
 ## Hard rules
 
@@ -48,11 +57,11 @@ src/
 - **Claim links carry everything.** Format: `/claim#<base64url(JSON ClaimPayload)>` — the secret lives in the URL **fragment** (never query string, never server logs). No server state for single sends.
 - **Terminology:** "local stablecoin", never "native token". Recipients see money words, not chain words.
 - **Stub honestly.** If a real API can't be wired (missing key, missing testnet pair), implement the interface as a clearly named stub (`// NOT YET WIRED` + console.warn) and keep demo mode working. Never fake a "real" integration.
-- **Arc testnet only.** All legs (shield, settle, FX) stay on Arc.
+- **Arc is where privacy + FX live.** Shield, private transfer, withdraw, and FX all stay on Arc. The ONE cross-chain hop is **aggregation**: CCTP bridges USDC from Base Sepolia → Arc *before* shielding, so shielded funds never cross a public hop.
 
-## Build phases
+## Build order
 
-Strict order per PRD §4 — Phase N's checkpoint must pass before N+1. If a real-chain checkpoint can't pass for lack of credentials/funds, the demo-mode checkpoint must pass and the real path must compile and be flag-gated.
+**Batch-first** (supersedes the PRD's "build A before B"): batch payout is the hero because the privacy property is only self-contained at N>1; single send is the N=1 case of the same engine. Tracks are sliced along adapter-interface seams and parallelized — see `docs/TICKETS.md`. Demo mode must stay green at every step; the real path must compile and be flag-gated even when credentials are absent.
 
 ## Style
 
