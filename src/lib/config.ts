@@ -83,6 +83,16 @@ export const CIRCLE_KIT_KEY = process.env.CIRCLE_KIT_KEY;
 export const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL;
 
 /**
+ * Email delivery (server-only) — used by /api/notify to email the recipient
+ * their claim link. Resend REST API (no SDK). Without the key the route returns
+ * an honest 501 (never silently "succeeds"). `EMAIL_FROM` defaults to Resend's
+ * shared test sender, which only delivers to your own verified address — set a
+ * verified-domain from-address to email anyone (e.g. a friend) for the demo.
+ */
+export const RESEND_API_KEY = process.env.RESEND_API_KEY;
+export const EMAIL_FROM = process.env.EMAIL_FROM ?? "Slip <onboarding@resend.dev>";
+
+/**
  * True when the REAL Dynamic pregen path is available: not in demo mode AND
  * both the public env id and the server token are present. When false, the
  * pregen route returns a deterministic demo address.
