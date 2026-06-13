@@ -6,9 +6,13 @@
  * The secret lives in the URL fragment, which the server NEVER sees, so decode
  * happens client-side. Flow:
  *   ready    → big friendly amount + "Claim your money"
+ *   login    → simulated email/SMS OTP gate ("confirm it's you") — folds in A3
  *   claiming → live claim progress (ClaimSteps, streamed from runClaim)
  *   success  → "You received $X" + receipt + tx link
  *   claimed  → re-opening a claimed link shows the original receipt
+ *
+ * Re-opening an already-claimed link short-circuits straight to the receipt —
+ * the OTP gate only stands between a fresh "ready" link and the claim.
  *
  * Zero credentials in demo mode: no wallet UI, no seed phrase, no gas prompt.
  */
@@ -31,11 +35,13 @@ import {
 import { useHash } from "@/lib/useClientValue";
 import { formatUsd, shortAddress } from "@/lib/format";
 import ClaimSteps from "./ClaimSteps";
+import OtpLogin from "./OtpLogin";
 
 type Phase =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; payload: ClaimPayload }
+  | { kind: "login"; payload: ClaimPayload }
   | { kind: "claiming"; payload: ClaimPayload }
   | { kind: "success"; payload: ClaimPayload; receipt: ClaimReceipt }
   | { kind: "claimed"; payload: ClaimPayload; receipt: ClaimReceipt };
@@ -107,6 +113,11 @@ export default function ClaimScreen() {
     );
   }
 
+  // login — simulated email/SMS OTP gate. On verify, run the real claim.
+  if (phase.kind === "login") {
+    return <OtpLogin onVerified={() => handleClaim(phase.payload)} />;
+  }
+
   // ready | claiming
   const { payload } = phase;
   const amount = formatUsd(Number(payload.amountUsdc));
@@ -153,7 +164,7 @@ export default function ClaimScreen() {
       <div className="flex-1" />
 
       <button
-        onClick={() => handleClaim(payload)}
+        onClick={() => setOverride({ kind: "login", payload })}
         disabled={claiming}
         className="btn-volt focus-volt rise mt-6 w-full rounded-2xl py-4 text-[16px] font-bold disabled:cursor-not-allowed disabled:opacity-60"
       >

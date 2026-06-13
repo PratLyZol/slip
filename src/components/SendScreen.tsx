@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { runSend } from "@/lib/engine";
 import {
   EngineStep,
@@ -193,6 +194,17 @@ export default function SendScreen() {
       >
         {phase === "running" ? "Sending…" : "Send"}
       </button>
+
+      {/* Multi-recipient is the same recipients[] path — Batch is its surface. */}
+      {phase !== "running" && (
+        <Link
+          href="/batch"
+          className="focus-volt rise mt-3.5 text-center text-[12.5px] font-medium text-text-faint transition-colors hover:text-text-dim"
+        >
+          Paying several people?{" "}
+          <span className="text-text-dim">Send a batch →</span>
+        </Link>
+      )}
     </div>
   );
 }

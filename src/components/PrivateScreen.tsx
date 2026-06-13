@@ -212,6 +212,9 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
         “Even the builder can&apos;t read this.”
       </p>
 
+      {/* Where the privacy becomes meaningful: a batch (N>1). */}
+      <BatchUnlinkability />
+
       {/* Comparison */}
       <Comparison amount={amount} />
 
@@ -339,6 +342,76 @@ function PrivateMiddle({ proofRef }: { proofRef?: string }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The N>1 story (PLAN §1): a single deposit→withdraw is the classic mixer tell —
+ * its privacy leans on the shared pool's ambient traffic. The property becomes
+ * *self-contained* in a batch: ONE public deposit of the total Σ, N public
+ * withdrawals of varying amounts to N unrelated addresses — and which payee got
+ * which amount is unknowable. The anonymity set is your own transaction set.
+ */
+function BatchUnlinkability() {
+  // A small, illustrative batch — copy-only (not tied to this send's receipt).
+  // Plausible unrelated payout addresses, the point being N independent accounts.
+  const PAYEES = ["0x7a3f", "0xc1d8", "0x4e02", "0xbb91"];
+  return (
+    <div className="card-shielded shield-scan rise relative mt-5 overflow-hidden p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#16130a]/60">
+          Where it gets strong — a batch
+        </span>
+        <span className="rounded-full border border-[#16130a]/20 bg-[#16130a]/[0.06] px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.1em] text-[#16130a]/70">
+          N&nbsp;&gt;&nbsp;1
+        </span>
+      </div>
+
+      <p className="mt-2.5 text-[12.5px] leading-snug text-[#16130a]/75">
+        One send is the trivial case (N&nbsp;=&nbsp;1). Pay a whole group at once
+        and the privacy becomes self-contained: the chain shows{" "}
+        <span className="font-semibold text-[#16130a]">one</span> public deposit
+        of the total, then{" "}
+        <span className="font-semibold text-[#16130a]">N</span> public payouts to
+        N unrelated accounts. Which payee got which amount is unknowable.
+      </p>
+
+      {/* IN: one public deposit of Σ → OUT: N unlinkable payouts. */}
+      <div className="mt-3.5 rounded-xl border border-[#16130a]/15 bg-[#16130a]/[0.04] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#16130a]/55">
+            1 deposit · total Σ
+          </span>
+          <span className="hash text-[11px] text-[#16130a]/70">readable</span>
+        </div>
+        <div className="mt-2 border-t border-dashed border-[#16130a]/20 pt-2.5">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#16130a]/55">
+            {PAYEES.length} payouts · amounts redacted
+          </span>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {PAYEES.map((addr, i) => (
+              <li
+                key={addr}
+                className="flex items-center justify-between gap-3 text-[12px] text-[#16130a]/85"
+              >
+                <span className="hash text-[#16130a]/70">→ {addr}…</span>
+                <span
+                  aria-hidden
+                  className="redact-bar"
+                  style={{ width: `${34 + ((i * 23) % 40)}%` }}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <p className="mt-3 text-[11px] leading-snug text-[#16130a]/60">
+        A lone send inherits only the shared pool&apos;s ambient traffic — thin on
+        testnet today. The batch carries its own anonymity set, so it&apos;s the
+        honest place to judge the privacy.
+      </p>
     </div>
   );
 }
