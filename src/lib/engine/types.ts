@@ -126,6 +126,89 @@ export interface SettleResult {
   tx: TxRef;
 }
 
+/**
+ * The claim-side pipeline (PRD §2 step 7, exploded into visible sub-steps).
+ *
+ * The send pipeline ends with a funded-but-undeployed counterfactual account.
+ * The claim pipeline picks it up: reconstruct the account from the secret,
+ * sponsor gas, deploy + withdraw in one batched UserOp, FX into local money.
+ * Kept as its own enum so the claim progress UI can render independently of the
+ * seven send steps.
+ */
+export enum ClaimStep {
+  /** Validate the decoded claim payload (amount, secret, version). */
+  Validate = "validate",
+  /** Reconstruct the counterfactual account from the secret. */
+  Reconstruct = "reconstruct",
+  /** Paymaster sponsors gas — recipient never holds a gas token. */
+  SponsorGas = "sponsorGas",
+  /** Deploy the account + withdraw the USDC in one batched UserOp. */
+  Withdraw = "withdraw",
+  /** FX the USDC into the recipient's local stablecoin (Phase 4 hook). */
+  Convert = "convert",
+  /** Done — money has landed in the recipient's walletless account. */
+  Done = "done",
+}
+
+/** Ordered claim steps, for rendering claim progress UI. */
+export const CLAIM_STEPS: readonly ClaimStep[] = [
+  ClaimStep.Validate,
+  ClaimStep.Reconstruct,
+  ClaimStep.SponsorGas,
+  ClaimStep.Withdraw,
+  ClaimStep.Convert,
+  ClaimStep.Done,
+] as const;
+
+/** Per-claim-step state surfaced to the claim progress UI. */
+export interface ClaimStepState {
+  step: ClaimStep;
+  status: StepStatus;
+  detail?: string;
+  explorerUrl?: string;
+}
+
+/** Callback the claim engine invokes as each claim step transitions. */
+export type ClaimStepListener = (state: ClaimStepState) => void;
+
+/**
+ * Result of the FX-at-claim hook (PRD §2 step 7, §3: "FX at CLAIM time").
+ *
+ * Phase 4 fills in real Arc StableFX behind {@link fxAtClaim}. The interface is
+ * frozen now: given a USDC amount + region, return the token + amount the
+ * recipient actually receives, plus optional rate + settlement tx. In Phase 2
+ * the hook passes USDC through unchanged (rate 1.0, no tx).
+ */
+export interface FxResult {
+  /** Symbol of the local stablecoin delivered, e.g. "USDC" | "EURC". */
+  token: string;
+  /** Amount of `token` delivered, human units as a string. */
+  amount: string;
+  /** FX rate applied (USDC → token). 1 for a pass-through. */
+  rateUsed?: number;
+  /** StableFX settlement tx, when a real conversion happened. */
+  txHash?: Hex;
+}
+
+/**
+ * Terminal result of a claim. Mirrors {@link EngineResult}'s shape on the
+ * recipient side: where the money landed, what it became, and the receipt.
+ */
+export interface ClaimResult {
+  /** The counterfactual account the secret reconstructs. */
+  counterfactualAddress: Address;
+  /** The walletless embedded account silently created for the recipient. */
+  recipientAddress: Address;
+  /** The batched deploy-and-withdraw transaction (real or simulated). */
+  withdrawTx: TxRef;
+  /** What the recipient received after FX (token + amount). */
+  fx: FxResult;
+  /** Final per-step states (for the receipt / re-open view). */
+  steps: ClaimStepState[];
+  /** ISO timestamp the claim completed. */
+  claimedAt: string;
+}
+
 /** Terminal result of a single send through the engine. */
 export interface EngineResult {
   /** The claim secret generated for this send (also inside claimPayload). */

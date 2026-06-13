@@ -12,7 +12,7 @@
  * the salt — the interface (secret → address) is unchanged.
  */
 
-import { keccak256, type Address, type Hex } from "viem";
+import { keccak256, toHex, concatHex, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { CounterfactualResult } from "./types";
 
@@ -29,6 +29,29 @@ export function generateClaimSecret(): Hex {
 export function addressFromSecret(secret: Hex): Address {
   // keccak(secret) → a uniformly-distributed 32-byte private key.
   const privateKey = keccak256(secret);
+  return privateKeyToAccount(privateKey).address;
+}
+
+/**
+ * Derive the recipient's WALLETLESS embedded account from the claim secret.
+ *
+ * PRD Phase 2: the recipient never makes a wallet, never sees a seed phrase. In
+ * demo mode we simulate an embedded account being silently created for them by
+ * deriving a deterministic address from the secret + a fixed "recipient" salt.
+ * It is distinct from {@link addressFromSecret} (the counterfactual that holds
+ * the settled USDC) so the claim story is "money moves from the claim account
+ * into the account we created for you".
+ *
+ * Real path (flag-gated, later): if a Dynamic env id exists, the recipient may
+ * optionally log in with email to bind a real embedded wallet here — but that
+ * path is never required in demo. The secret → recipient-address interface
+ * stays stable so a later agent can swap the derivation without touching callers.
+ */
+export function recipientAddressFromSecret(secret: Hex): Address {
+  // Domain-separate from the counterfactual key with a fixed salt so the two
+  // addresses can never collide.
+  const salted = concatHex([secret, toHex("slip:recipient")]);
+  const privateKey = keccak256(salted);
   return privateKeyToAccount(privateKey).address;
 }
 

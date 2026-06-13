@@ -103,6 +103,10 @@ export default function SuccessCard({ result, recipient, onSendAnother }: Props)
         </p>
       </div>
 
+      <p className="mt-4 text-[12px] font-medium text-text-dim">
+        They&apos;ll tap once. No wallet, no gas.
+      </p>
+
       <button
         onClick={onSendAnother}
         className="focus-volt mt-6 text-[14px] font-medium text-text-dim transition-colors hover:text-text"

@@ -1,12 +1,19 @@
 /** Human-facing metadata for the seven engine steps (used by progress UI + architecture). */
 
-import { EngineStep } from "./types";
+import { ClaimStep, EngineStep } from "./types";
 
 export interface StepMeta {
   step: EngineStep;
   /** Short title shown in the progress list. */
   title: string;
   /** One-line description for the architecture reveal. */
+  blurb: string;
+}
+
+/** Human-facing metadata for the claim-side pipeline (recipient progress UI). */
+export interface ClaimStepMeta {
+  step: ClaimStep;
+  title: string;
   blurb: string;
 }
 
@@ -45,5 +52,38 @@ export const STEP_META: Record<EngineStep, StepMeta> = {
     step: EngineStep.Claim,
     title: "Claim & convert",
     blurb: "Tapping the link deploys, withdraws, and FX's into local money — in one go.",
+  },
+};
+
+export const CLAIM_STEP_META: Record<ClaimStep, ClaimStepMeta> = {
+  [ClaimStep.Validate]: {
+    step: ClaimStep.Validate,
+    title: "Open the slip",
+    blurb: "Read the secret from the link. Nothing was ever sent to a server.",
+  },
+  [ClaimStep.Reconstruct]: {
+    step: ClaimStep.Reconstruct,
+    title: "Set up your account",
+    blurb: "An account is created for you from the link — no wallet, no seed phrase.",
+  },
+  [ClaimStep.SponsorGas]: {
+    step: ClaimStep.SponsorGas,
+    title: "Cover the fees",
+    blurb: "Gas is sponsored. You never touch a gas token or see a prompt.",
+  },
+  [ClaimStep.Withdraw]: {
+    step: ClaimStep.Withdraw,
+    title: "Release the money",
+    blurb: "Deploy and withdraw in one batched transaction.",
+  },
+  [ClaimStep.Convert]: {
+    step: ClaimStep.Convert,
+    title: "Into your money",
+    blurb: "Convert to your local stablecoin at claim time.",
+  },
+  [ClaimStep.Done]: {
+    step: ClaimStep.Done,
+    title: "Done",
+    blurb: "The money is yours.",
   },
 };
