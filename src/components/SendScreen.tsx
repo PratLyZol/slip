@@ -57,10 +57,10 @@ export default function SendScreen() {
     try {
       const res = await runSend(
         {
-          recipient: recipient.trim(),
-          amountUsd: amountNum,
+          recipients: [
+            { identifier: recipient.trim(), amountUsd: amountNum, region },
+          ],
           senderName: wallet.name,
-          region,
         },
         onStep,
       );

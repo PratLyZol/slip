@@ -99,10 +99,16 @@ function validateClaimPayload(value: unknown): DecodeResult {
   if (typeof p.amountUsdc !== "string" || p.amountUsdc.length === 0) {
     return { ok: false, error: "This claim link is missing an amount." };
   }
+  if (
+    typeof p.recipientAddress !== "string" ||
+    !/^0x[0-9a-fA-F]{40}$/.test(p.recipientAddress)
+  ) {
+    return { ok: false, error: "This claim link is missing its payout address." };
+  }
   if (typeof p.createdAt !== "string") {
     return { ok: false, error: "This claim link is malformed." };
   }
-  if (p.senderName !== undefined && typeof p.senderName !== "string") {
+  if (p.senderLabel !== undefined && typeof p.senderLabel !== "string") {
     return { ok: false, error: "This claim link is malformed." };
   }
   if (p.region !== undefined && p.region !== "US" && p.region !== "EU") {
@@ -115,7 +121,8 @@ function validateClaimPayload(value: unknown): DecodeResult {
       v: p.v,
       secret: p.secret as ClaimPayload["secret"],
       amountUsdc: p.amountUsdc,
-      senderName: p.senderName as string | undefined,
+      recipientAddress: p.recipientAddress as ClaimPayload["recipientAddress"],
+      senderLabel: p.senderLabel as string | undefined,
       region: p.region as ClaimPayload["region"],
       createdAt: p.createdAt,
     },

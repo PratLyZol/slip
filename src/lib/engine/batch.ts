@@ -122,13 +122,11 @@ export function validRows(rows: BatchRow[]): BatchRow[] {
   return rows.filter((r) => r.errors.length === 0);
 }
 
-/** Build the SendRequest for one row. */
+/** Build the SendRequest for one row (a single-recipient send). */
 export function rowToSendRequest(row: BatchRow, senderName?: string): SendRequest {
   return {
-    recipient: row.name,
-    amountUsd: row.amount,
+    recipients: [{ identifier: row.name, amountUsd: row.amount, region: row.region }],
     senderName,
-    region: row.region,
   };
 }
 

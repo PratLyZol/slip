@@ -47,7 +47,10 @@ async function main() {
 
   const seen: StepState[] = [];
   const result = await runSend(
-    { recipient: "alice", amountUsd: 50, senderName: "Demo Sender", region: "EU" },
+    {
+      recipients: [{ identifier: "alice", amountUsd: 50, region: "EU" }],
+      senderName: "Demo Sender",
+    },
     (s) => {
       seen.push(s);
       if (s.status !== "queued") {

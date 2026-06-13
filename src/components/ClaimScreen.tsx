@@ -121,8 +121,8 @@ export default function ClaimScreen() {
         className="pointer-events-none absolute left-1/2 top-14 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.06] blur-3xl"
       />
       <span className="serif rise text-[22px] italic text-text-dim">
-        {payload.senderName
-          ? `${payload.senderName} sent you`
+        {payload.senderLabel
+          ? `${payload.senderLabel} sent you`
           : "Someone sent you"}
       </span>
       <h1 className="amount-figure rise mt-4 text-[60px] font-medium leading-none">
@@ -214,7 +214,7 @@ function SuccessState({
 
       <div className="card card-pop rise mt-8 w-full p-4 text-left">
         <Row label="Received" value={received} />
-        {payload.senderName && <Row label="From" value={payload.senderName} />}
+        {payload.senderLabel && <Row label="From" value={payload.senderLabel} />}
         <Row
           label="Your account"
           value={shortAddress(receipt.recipientAddress)}

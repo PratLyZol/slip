@@ -12,41 +12,52 @@ import type { Address, Hex } from "viem";
 export type Region = "US" | "EU";
 
 /** Current claim-payload schema version. Bump if the shape changes. */
-export const CLAIM_PAYLOAD_VERSION = 1 as const;
+export const CLAIM_PAYLOAD_VERSION = 2 as const;
 
 /**
  * Everything the recipient needs to claim, encoded into the URL fragment.
  *
  * CRITICAL (AGENTS.md): the `secret` lives in the `/claim#...` fragment ONLY —
  * never a query string, never a server log. The fragment never leaves the
- * browser. The secret deterministically derives the counterfactual account, so
- * whoever holds the link can claim (hackathon-grade design decision, PRD §3).
+ * browser. The secret deterministically derives the claim account, so whoever
+ * holds the link can claim (hackathon-grade design decision, PRD §3).
  */
 export interface ClaimPayload {
-  /** Schema version. */
+  /** Schema version (currently 2). */
   v: number;
-  /** 32-byte claim secret, hex (0x-prefixed). Salt for the counterfactual account. */
+  /** 32-byte claim secret, hex (0x-prefixed). Re-derives the Unlink claim account. */
   secret: Hex;
   /** Amount of USDC settled, human units as a string (e.g. "50.00"). */
   amountUsdc: string;
-  /** Optional sender display name ("Sent by alice"). */
-  senderName?: string;
+  /** The recipient's Dynamic pregen EVM payout address (where the claim lands). */
+  recipientAddress: Address;
+  /** Optional sender display label ("Sent by alice"). */
+  senderLabel?: string;
   /** Optional recipient region; drives FX at claim time. */
   region?: Region;
   /** ISO timestamp the slip was created. */
   createdAt: string;
 }
 
-/** A single send request entering the engine. */
-export interface SendRequest {
-  /** Raw recipient handle the sender typed (name / username / .eth). */
-  recipient: string;
+/**
+ * A single recipient line of a send. `identifier` is whatever the sender typed:
+ * email / phone / name / .eth. A single send is just `recipients.length === 1`.
+ */
+export interface Recipient {
+  /** Raw recipient handle (email / phone / name / .eth). */
+  identifier: string;
   /** Amount in USD (== USDC), human units. */
   amountUsd: number;
-  /** Optional sender display name to embed in the claim link. */
-  senderName?: string;
   /** Optional recipient region (defaults applied downstream). */
   region?: Region;
+}
+
+/** A send request entering the engine — one or many recipients. */
+export interface SendRequest {
+  /** Recipients to pay; single-send = exactly one. */
+  recipients: Recipient[];
+  /** Optional sender display label embedded in each claim link. */
+  senderName?: string;
 }
 
 /** The seven steps of a send (PRD §2). Ordered. */
@@ -245,6 +256,36 @@ export interface FxResult {
   rateUsed?: number;
   /** StableFX settlement tx, when a real conversion happened. */
   txHash?: Hex;
+}
+
+/**
+ * Adapter interfaces the engine programs against (one `real` flag + one method
+ * each). Real + demo implementations are built in Wave 1 — do NOT implement
+ * them here. `FxResult` is defined above; `ShieldOps` lives in adapters/unlink.ts.
+ */
+
+/** Pregen payout address for a recipient identifier (Dynamic waas in Wave 1). */
+export interface PregenOps {
+  /** True when backed by a real Dynamic env; false in demo. */
+  real: boolean;
+  /** Map an identifier to its (pregen) EVM payout address. */
+  pregenAddress(identifier: string): Promise<{ address: Address; existed: boolean }>;
+}
+
+/** Cross-chain USDC bridge into Arc (Circle CCTP in Wave 1). */
+export interface BridgeOps {
+  /** True when backed by a real CCTP route + funded EOA; false in demo. */
+  real: boolean;
+  /** Bridge `amountUsdc` (human units) onto Arc. */
+  bridge(amountUsdc: string): Promise<{ txHash?: Hex; explorerUrl?: string; simulated: boolean }>;
+}
+
+/** FX at claim time (Circle StableFX / Swap in Wave 1). */
+export interface FxOps {
+  /** True when backed by a real StableFX/Swap key; false in demo. */
+  real: boolean;
+  /** Convert `amountUsdc` into the recipient's local stablecoin for `region`. */
+  convert(amountUsdc: string, region: Region | undefined, secret: Hex): Promise<FxResult>;
 }
 
 /**

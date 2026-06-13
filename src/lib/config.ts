@@ -49,6 +49,72 @@ export function isDemoMode(): boolean {
   return false;
 }
 
+/**
+ * Dynamic server API token (server-only — NEVER bundled to the client). The
+ * `dyn_…` token authorizes the backend pregen route (`waas/create`) and wallet
+ * lookups. Without it the real recipient-address derivation has no Dynamic
+ * backend to call, so pregen degrades to the deterministic demo address.
+ */
+export const DYNAMIC_API_TOKEN = process.env.DYNAMIC_API_TOKEN;
+
+/**
+ * Funded Base Sepolia EOA private key (server-only — NEVER bundled to the
+ * client). Signs the CCTP burn that aggregates Σ(amounts) from Base Sepolia to
+ * Arc testnet. Absent, the bridge leg runs as a deterministic simulation.
+ */
+export const CCTP_PRIVATE_KEY = process.env.CCTP_PRIVATE_KEY;
+
+/**
+ * Circle StableFX API key (server-only — NEVER bundled to the client). Format
+ * `PREFIX:ID:SECRET`. Contact-a-rep (sales@circle.com), so it may be absent;
+ * when missing the primary FX path falls back to Swap Kit, then to the sim.
+ */
+export const STABLEFX_API_KEY = process.env.STABLEFX_API_KEY;
+
+/**
+ * Circle Kit key (server-only — NEVER bundled to the client). Powers the Swap
+ * Kit fallback FX leg (real on-chain USDC→EURC). Absent, FX falls back to the
+ * deterministic simulation.
+ */
+export const CIRCLE_KIT_KEY = process.env.CIRCLE_KIT_KEY;
+
+/** Optional Base Sepolia RPC override (server-only). Falls back to the SDK default. */
+export const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL;
+
+/**
+ * True when the REAL Dynamic pregen path is available: not in demo mode AND
+ * both the public env id and the server token are present. When false, the
+ * pregen route returns a deterministic demo address.
+ */
+export function isPregenConfigured(): boolean {
+  return !isDemoMode() && !!DYNAMIC_ENV_ID && !!DYNAMIC_API_TOKEN;
+}
+
+/**
+ * True when the REAL CCTP bridge path is available: not in demo mode AND a
+ * funded Base Sepolia signer key is present. When false, the bridge leg is
+ * simulated deterministically.
+ */
+export function isBridgeConfigured(): boolean {
+  return !isDemoMode() && !!CCTP_PRIVATE_KEY;
+}
+
+/**
+ * True when the REAL StableFX path is available: not in demo mode AND a Circle
+ * StableFX key is present. When false, FX cascades to Swap Kit then the sim.
+ */
+export function isStableFxConfigured(): boolean {
+  return !isDemoMode() && !!STABLEFX_API_KEY;
+}
+
+/**
+ * True when the REAL Swap Kit fallback FX path is available: not in demo mode
+ * AND a Circle Kit key is present. When false, FX falls back to the sim.
+ */
+export function isSwapConfigured(): boolean {
+  return !isDemoMode() && !!CIRCLE_KIT_KEY;
+}
+
 /** A believable fixed balance shown to the demo sender (USDC, human units). */
 export const DEMO_USDC_BALANCE = 1283.5;
 

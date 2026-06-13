@@ -76,10 +76,8 @@ export default function PrivateScreen() {
     setBusy(true);
     try {
       const res = await runSend({
-        recipient: "alice.eth",
-        amountUsd: 50,
+        recipients: [{ identifier: "alice.eth", amountUsd: 50, region: "EU" }],
         senderName: "Demo Sender",
-        region: "EU",
       });
       const receipt = sentReceiptFromResult(res);
       saveSentReceipt(res.secret, receipt);
