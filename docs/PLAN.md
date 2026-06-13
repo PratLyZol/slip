@@ -7,6 +7,25 @@
 
 ---
 
+## Bounty targeting
+
+We submit across three sponsors (Dynamic + Unlink + Arc/Circle):
+
+- **Arc — primary: "Best Chain Abstracted USDC Apps Using Arc as a Liquidity Hub" ($3,500).**
+  Near-exact fit and already built: CCTP bridges USDC from another chain (Base Sepolia) onto
+  Arc — multiple chains as one liquidity surface, Arc as the hub — with a seamless walletless
+  payout UX. Lead with this. (Resources it lists: USDC, Gateway, Circle Wallets — our stack.)
+- **Arc — secondary: "Advanced Stablecoin Logic" ($3,500)** via their listed example
+  *"programmable payroll in USDC/EURC"* — our private batch payroll. Weaker fit (that track
+  leans toward deploying your own contracts; we orchestrate Unlink/CCTP), submit as a second.
+- **Unlink** (private payments) + **Dynamic** (walletless onboarding) — their own sponsor
+  bounties, hit by the privacy fan-out + pregen/OTP claim.
+
+**StableFX is dropped** (contact-a-rep gated; no track requires it). FX is a feature, not a
+requirement — see decision #9. None of the above depend on it.
+
+---
+
 ## 0. Decisions locked (do not relitigate)
 
 1. **Batch is the hero; single-send is the on-ramp.** This is a CONSCIOUS REVERSAL of
@@ -37,25 +56,22 @@
    sequentially.
 8. **Claim = N independent withdrawals.** Each recipient's browser re-derives its account
    from its secret and `withdraw()`s to its pregen address (relayer-submitted, gasless).
-9. **FX at claim = flag-gated cascade, direction USDC→EURC, built LAST.** Priority:
-   **(1) StableFX (primary)** — Circle's flagship cross-currency settlement product, the
-   strongest Arc/Circle-bounty story; wire the real REST flow against a TEST key (calling
-   the real API + signing real EIP-712 is an honest integration — TEST returns Circle
-   *sandbox* pricing, disclosed as testnet). **(2) Swap Kit (fallback)** — self-serve
-   real on-chain USDC→EURC, no key-wait; gate behind one confirmed live swap.
-   **(3) deterministic sim (last resort)** — so the demo never breaks. FX is post-withdraw
-   on the recipient's OWN funds — **not private**.
-10. **StableFX is WIRED (primary) — and its settlement is REAL on-chain (verified).**
-    FxEscrow is live on Arc (12k+ txns; USDC/EURC PvP settling today); a TEST trade yields
-    a real `settlementTransactionHash` on ArcScan and delivers real testnet EURC to the
-    recipient — only the *quote pricing* is sandbox. Two catches: the key is contact-a-rep
-    (`sales@circle.com`) — **email Circle Day 0**; and a testnet *maker* must complete the
-    PvP or a trade stalls at `taker_funded`. The Swap Kit + sim fallbacks cover both, so FX
-    is never a critical-path blocker.
+9. **Local currency at claim = deliver the right stablecoin directly; NO StableFX.** EU
+   recipient → **EURC**, everyone else → **USDC** — settle/withdraw the destination coin the
+   recipient should receive (EURC is faucet-fundable on Arc), rather than converting. This is
+   real, trivial, needs no key, and keeps the "pay anyone in their local money" story. The
+   "FX" is a destination-token choice, not a swap.
+   - **Optional upgrade (stretch):** a real on-chain USDC→EURC swap via **Circle Swap Kit**
+     (`@circle-fin/swap-kit`, **free self-serve** kit key) — gate behind one confirmed live
+     swap; demo sim is the fallback. Adds a genuine FX leg if we want it; not required.
+10. **StableFX is DROPPED.** Its key is contact-a-rep only and **no bounty track requires it**
+    — keeping it added a human-gated dependency for zero bounty value. Remove the
+    `fx-stablefx.ts` adapter; replace with the direct-EURC delivery above (+ optional Swap
+    Kit). FX is post-withdraw on the recipient's OWN funds — **not private**.
 
 3-SDK rule holds: **Dynamic + Unlink + Circle/Arc** only. All `@circle-fin/*` (bridge-kit,
-swap-kit) count as the one Circle sponsor. Swap Kit is LI.FI-backed *internally* but is
-Circle's SDK — compliant. viem = plumbing; ENS = raw resolver read.
+swap-kit) count as the one Circle sponsor. (Swap Kit is LI.FI-backed *internally* but is
+Circle's SDK — compliant.) viem = plumbing; ENS = raw resolver read.
 
 ---
 
@@ -106,8 +122,8 @@ EACH RECIPIENT (browser)
 11. withdraw: client.withdraw({recipientEvmAddress: pregenAddress, token, amount}) [client→relayer]
         re-derive claim acct = account.fromSeed({seed: keccak(secret), accountIndex})
                                                                      gas: relayer (recipient pays nothing)
-12. FX (EU only): StableFX USDC→EURC (primary) → Swap Kit (fallback) → sim [server, flag-gated] ─▶ Circle on Arc
-        on the recipient's OWN funds — public, not private
+12. Local coin: EU → withdraw EURC, else USDC (destination-token choice, no swap).
+        Optional stretch: real USDC→EURC via Swap Kit. On the recipient's OWN funds — public.
 13. done — recipient holds local stablecoin in a wallet they own
 ```
 
@@ -196,13 +212,12 @@ const result = await new BridgeKit().bridge({
 | Dynamic env id | `NEXT_PUBLIC_DYNAMIC_ENV_ID` | app.dynamic.xyz | ✅ free | login + pregen |
 | Dynamic API token | `DYNAMIC_API_TOKEN` (`dyn_…`) | dashboard → Developer → API Token | ✅ free | server pregen/lookup |
 | Unlink admin key | `UNLINK_API_KEY` | dashboard.unlink.xyz (project → Arc testnet) | ✅ free | register/authorize routes |
-| StableFX key | `STABLEFX_API_KEY` (`PREFIX:ID:SECRET`) | sales@circle.com — **request Day 0** | ❌ human | primary real FX |
-| Circle kit key | `CIRCLE_KIT_KEY` | console.circle.com → Keys → Kit Key | ✅ free | fallback real FX (Swap Kit) |
+| Circle kit key | `CIRCLE_KIT_KEY` | console.circle.com → Keys → Kit Key | ✅ free | OPTIONAL — real USDC→EURC Swap Kit (stretch) |
 | CCTP source funds | `CCTP_PRIVATE_KEY` (funded EOA) | faucet.circle.com (Base Sepolia USDC) + Base Sepolia ETH faucet | ✅ | real bridge |
 
-All self-serve **except StableFX** (contact-a-rep). That's the only human-gated key, and
-the Swap Kit fallback means FX is still real even if it never arrives — so it's not a
-critical-path blocker. Request it early regardless (it's the best FX story).
+Everything is now self-serve — StableFX (the only contact-a-rep key) is dropped. The
+direct-EURC delivery needs no FX key at all; the Swap Kit key is optional (free) only if we
+want a live USDC→EURC swap.
 
 ---
 
@@ -221,14 +236,12 @@ critical-path blocker. Request it early regardless (it's the best FX story).
 - **Dynamic has NO aggregate-to-USDC product** — CCTP fills that role.
 - **CCTP `Arc_Testnet`/`Base_Sepolia` first-class in bridge-kit**, no key, forwarder = no
   recipient Arc gas, mint = standard ERC-20 at `0x3600…`.
-- **StableFX TEST = sandbox PRICING but REAL on-chain settlement (CONFIRMED).** FxEscrow on
-  Arc is live (12k+ txns; USDC/EURC PvP settling today; ~466 EURC maker inventory). A TEST
-  trade produces a real `settlementTransactionHash` on ArcScan and delivers real testnet
-  EURC to the recipient — only the quote *pricing* is simulated. Wire it as PRIMARY FX. Two
-  catches: contact-a-rep key (request Day 0), and a testnet *maker* must complete the PvP
-  or the trade stalls at `taker_funded` (→ keep the sim fallback).
-- **Swap Kit** real on Arc testnet for {USDC,EURC,cirBTC} only, free self-serve key, but
-  **direction USDC→EURC + actual liquidity unverified by us** → gate on one live swap.
+- **StableFX dropped** (contact-a-rep key, no bounty needs it). FYI it *does* settle real
+  on-chain in TEST (FxEscrow live; only pricing is sandbox) — but not worth the human-gated
+  dependency. Local currency is now a destination-token choice: deliver EURC (faucet-fundable)
+  to EU recipients, USDC otherwise.
+- **Swap Kit** (optional stretch) real on Arc testnet for {USDC,EURC,cirBTC} only, **free
+  self-serve key**, but direction USDC→EURC + liquidity unverified by us → gate on one live swap.
 
 ---
 
@@ -238,8 +251,8 @@ critical-path blocker. Request it early regardless (it's the best FX story).
 > deterministic simulation. Demo mode must never break.
 
 **P0 — Foundations:** `npm install`; add `@circle-fin/bridge-kit @circle-fin/adapter-viem-v2`
-(+ `@circle-fin/swap-kit` for FX). `import "server-only"` in server modules. Create
-`src/app/api/`.
+(`@circle-fin/swap-kit` only if doing the optional Swap FX stretch). `import "server-only"` in
+server modules. Create `src/app/api/`.
 
 **P1 — Server boundary (the #1 structural fix):** `src/app/api/pregen/route.ts`,
 `src/app/api/unlink/register/route.ts`, `src/app/api/unlink/authorization-token/route.ts`,
@@ -272,26 +285,23 @@ bridge **Σ** before shield; await mint.
 **P5 — Batch UI + claim UI:** batch screen (paste rows → N links + status table, payees
 isolated). `ClaimScreen.tsx` OTP-login gate → withdraw.
 
-**P6 — Real FX cascade (build LAST; lower priority than batch/privacy):**
-- `adapters/fx-stablefx.ts` (**primary**) — real StableFX REST: quote → sign EIP-712 →
-  trade → funding presign → sign Permit2 → fund → poll. **Read `domain.chainId`,
-  `domain.verifyingContract`, and `spender` from the API response — never hardcode** (spec
-  examples are Sepolia). Behind `STABLEFX_API_KEY`.
-- `adapters/swap.ts` (**fallback**) — Swap Kit USDC→EURC server route behind
-  `CIRCLE_KIT_KEY`; confirm one live swap (direction + liquidity) before relying on it.
-- Deterministic sim = last resort. Email Circle for the StableFX key on Day 0.
+**P6 — Local currency at claim (simple; StableFX REMOVED):**
+- **Delete `adapters/fx-stablefx.ts`** and the StableFX path in `engine/fx.ts` / `/api/fx`.
+- Deliver the destination coin directly: EU recipient → withdraw **EURC**, else **USDC**
+  (`fxAtClaim` becomes a token-selector, not a swap; EURC is faucet-fundable on Arc). No key.
+- **Optional stretch:** `adapters/swap.ts` — real USDC→EURC via Swap Kit behind the free
+  `CIRCLE_KIT_KEY`; confirm one live swap (direction + liquidity) before relying on it; sim
+  fallback. Only do this if you want a live FX leg on top of direct delivery.
 
 ---
 
 ## 7. Demo honesty (say it before a judge finds it)
 
-- **Real:** CCTP bridge (Σ onto Arc), shielded batch transfers + withdrawals (the privacy
-  property), Dynamic pregen + OTP claim, and FX via **Circle StableFX** — a real Arc
-  FxEscrow PvP settlement (verifiable `settlementTransactionHash`, recipient receives real
-  testnet EURC; only the quote pricing is sandbox) — or **Swap Kit** (real on-chain swap).
-- **Disclosed:** StableFX TEST returns Circle *sandbox* pricing — honest testnet behavior,
-  not a fabricated rate. FX drops to a deterministic sim only if neither FX path is
-  available (no StableFX key AND no confirmed Swap liquidity).
+- **Real:** CCTP bridge (Σ onto Arc — the chain-abstraction story), shielded batch transfers
+  + withdrawals (the privacy property), Dynamic pregen + OTP claim, and **local-currency
+  delivery** (EU recipients receive real testnet EURC, others USDC — delivered directly).
+- **Optional real FX:** if the Swap Kit stretch is wired, a live on-chain USDC→EURC swap;
+  otherwise EURC is delivered directly (still real money, real coin) — no fabricated rates.
 - **Privacy is demo'd at N>1** (self-contained); single-send is the on-ramp, not a privacy
   claim (§1).
 
@@ -303,12 +313,8 @@ isolated). `ClaimScreen.tsx` OTP-login gate → withdraw.
    split vs deposit fallback. Discover empirically with the key.
 2. **Proving (`heavy`) rate-limit numbers** — whether ~25 sequential transfers throttle.
    Mitigated by SDK 3× retry + `Retry-After` + inter-call delay; demo ~5 recipients.
-3. **Swap Kit USDC→EURC direction + liquidity depth** on Arc testnet — one live swap.
-   **StableFX on-chain settlement: CONFIRMED real** (FxEscrow live on Arc, real
-   `settlementTransactionHash`, real EURC to recipient; pricing sandbox). Remaining StableFX
-   residual: whether a testnet *maker* completes the PvP — if Circle runs no maker bot, a
-   trade can stall at `taker_funded` (USDC escrowed/refundable, no EURC). Settle with one
-   live TEST-key trade through to `complete`.
+3. **(Only if doing the optional Swap stretch)** Swap Kit USDC→EURC direction + liquidity
+   depth on Arc testnet — one live swap. Not needed for the default direct-EURC delivery.
 4. **Pregen address stability across pregen→claim** — 1-min test (strongly implied by MPC).
 5. **CCTP FAST latency** Base Sepolia → Arc (docs ~8–20s); UI must handle the await.
 6. **Exact pregen response field** (parse both `accountAddress` and `wallets[].publicKey`).
@@ -317,7 +323,6 @@ isolated). `ClaimScreen.tsx` OTP-login gate → withdraw.
 
 ## 9. Remaining blockers
 
-**None structural.** StableFX's contact-a-rep key is the only human-gated dependency, and
-it's de-risked by the FX cascade (self-serve Swap Kit fallback → sim). Everything on the
-critical path is verified; FX has a real, self-serve path even if the StableFX key never
-arrives. Request the StableFX key Day 0 so the best FX story is available in time.
+**None.** With StableFX dropped, there are no human-gated dependencies left — every
+credential is self-serve, and local-currency delivery (EURC direct) needs no FX key at all.
+Everything on the critical path is verified.

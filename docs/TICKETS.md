@@ -13,15 +13,24 @@ hot-spot file (coordinate / single owner).
 
 ## Status (updated 2026-06-13)
 
-**Done & on `main`:** Wave 0 · A1 (pregen) · Track B (Unlink browser rewrite + auth routes,
-PR #3) · Track C (CCTP) · D1 (StableFX) · Track E (batch fan-out, PR #3) + batch surface wired
-to `runBatchSend` (PR #4) · Track F (batch + claim OTP + proof views, PR #2) · design + Railway
-config. **All core tracks merged — full demo runs green end-to-end (single + 6-row batch,
-single Σ-shield, no cross-leakage).**
+**Bounty target:** primary = Arc **"Chain-Abstracted USDC / Arc as Liquidity Hub" ($3,500)**
+(our CCTP bridge = multi-chain → one Arc liquidity surface); secondary = Arc **"Advanced
+Stablecoin Logic"** (programmable payroll); plus Dynamic + Unlink sponsor bounties. See
+`docs/PLAN.md` "Bounty targeting".
 
-**Remaining:** **A2** (real-mode sender login/balance — minor) · **D2/D3** (Swap FX fallback —
-optional; StableFX D1 covers FX) · **Wave 2** (gather keys → flip demo→real → one live testnet
-batch → deploy + domain).
+**Done & on `main`:** Wave 0 · A1 (pregen) · Track B (Unlink browser rewrite + auth routes,
+PR #3) · Track C (CCTP) · Track E (batch fan-out, PR #3) + batch surface wired to
+`runBatchSend` (PR #4) · Track F (batch + claim OTP + proof views, PR #2) · design + Railway
+config. **Full demo runs green end-to-end (single + 6-row batch, single Σ-shield, no
+cross-leakage).** Note: D1 StableFX shipped but is now being **REMOVED** (see below).
+
+**FX change:** **StableFX is DROPPED** (contact-a-rep key; no bounty needs it). Local currency
+is now a destination-token choice — EU → **EURC** (faucet-fundable), else **USDC** — delivered
+directly, no swap, no key. Optional stretch: real USDC→EURC via Swap Kit (free self-serve key).
+
+**Remaining:** **D-fix** (remove `fx-stablefx.ts`; `fxAtClaim` → token-selector) · **A2**
+(real-mode sender login/balance — minor) · optional Swap Kit stretch · **Wave 2** (gather keys
+→ flip demo→real → one live testnet batch → deploy + domain).
 
 **Deploy:** Railway is set up + auto-deploys on push to `main`. Earlier deploys failed on a
 stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys clean; then
@@ -79,13 +88,16 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 - [x] **C2 — Wire bridge into engine:** bridge before shield, await mint, keep gas buffer.
   *Files:* `src/lib/engine/aggregate.ts`, `src/lib/engine/shield.ts`.
 
-### Track D — FX (build last; lower priority than batch/privacy)
-- [x] **D1 — StableFX adapter** 🔑(`STABLEFX_API_KEY`): real REST quote→sign→trade→presign→
-  sign→fund→poll; **read domain/spender/typedData from the API response**. *Files:*
-  `src/lib/adapters/fx-stablefx.ts`, `api/fx/route.ts`.
-- [ ] **D2 — Swap Kit fallback** 🔑(`CIRCLE_KIT_KEY`): USDC→EURC server route. *Files:*
-  `src/lib/adapters/swap.ts`.
-- [ ] **D3 — Cascade selector** (StableFX → Swap → sim). *Files:* `src/lib/engine/fx.ts`.
+### Track D — Local currency at claim (StableFX DROPPED)
+- [x] ~~**D1 — StableFX adapter**~~ — shipped, now **being removed** (contact-a-rep key; no
+  bounty needs it). See D-fix.
+- [ ] **D-fix — Remove StableFX, deliver coin directly:** delete `src/lib/adapters/fx-stablefx.ts`
+  + the StableFX path in `api/fx/route.ts`; make `fxAtClaim` a token-selector (EU → EURC,
+  else USDC — EURC is faucet-fundable, no swap, no key). *Files:* `src/lib/engine/fx.ts`,
+  `src/lib/adapters/fx-stablefx.ts` (delete), `src/app/api/fx/route.ts`.
+- [ ] **D2 — (OPTIONAL stretch) Swap Kit** 🔑(`CIRCLE_KIT_KEY`, free self-serve): real
+  on-chain USDC→EURC; confirm one live swap. *Files:* `src/lib/adapters/swap.ts`. Only if we
+  want a live FX leg on top of direct delivery.
 
 ### Track E — Engine orchestration 🔥 — uses demo adapters; not blocked on A–D real code
 - [x] **E1 — `runSend` batch loop:** loop resolve→pregen over `recipients[]`; bridge + shield
@@ -105,8 +117,8 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 ---
 
 ## Wave 2 — Integration & live tests (after tracks land; coordinate)
-- [ ] **I1 — Flip demo→real** with keys; run the 3 live checks: faucet per-call cap,
-  StableFX maker completion (`taker_funded`→`complete`), Swap USDC→EURC liquidity.
+- [ ] **I1 — Flip demo→real** with keys; live checks: faucet per-call cap, CCTP bridge
+  Base Sepolia → Arc, EURC delivery to EU recipient (+ optional Swap USDC→EURC if wired).
 - [ ] **I2 — Full batch run** (5 recipients) end-to-end on testnet.
 - [ ] **I3 — Demo script + honesty labels + polish.**
 
@@ -126,8 +138,9 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 - `types.ts` — freeze in T0.2; everyone depends on it.
 - `engine/index.ts`, `engine/claim.ts` — Track E owner only; others touch adapters.
 
-**Day-0 action:** email Circle (`sales@circle.com`) for the StableFX key — it's the only
-contact-a-rep credential. Keep building D1 in demo meanwhile; flip live when it arrives.
+**Keys:** all self-serve now (StableFX dropped). Grab Dynamic env id + `dyn_` token, Unlink
+admin key (dashboard.unlink.xyz), a funded Base Sepolia wallet for CCTP, and (optional) a free
+Circle kit key for the Swap stretch.
 
 **Demo-stays-green rule:** every real adapter falls back to its demo/sim impl when its key
 is absent. `npm run build` must pass before each commit.
