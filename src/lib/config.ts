@@ -10,6 +10,31 @@
 export const DYNAMIC_ENV_ID = process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID;
 
 /**
+ * Unlink app id (public). Required by the Unlink SDK to namespace derived
+ * identities. Safe in the client bundle (it is a tenant label, not a secret).
+ */
+export const UNLINK_APP_ID = process.env.NEXT_PUBLIC_UNLINK_APP_ID ?? "slip";
+
+/**
+ * Unlink admin API key (server-only — NEVER bundled to the client). The
+ * custodial Unlink client needs a backend that can register users + issue
+ * authorization tokens; without this key there is no real Unlink backend to
+ * talk to, so the real shield path degrades to the direct settle fallback
+ * (PRD §8: privacy behind a flag must never block the end-to-end send).
+ */
+export const UNLINK_API_KEY = process.env.UNLINK_API_KEY;
+
+/**
+ * True when the REAL Unlink privacy path is available: not in demo mode AND an
+ * admin key is present. When false, demo mode simulates the shielded legs, or —
+ * if real creds for OTHER adapters exist but Unlink's don't — the engine
+ * degrades to direct settle with the shield marked "skipped (flag)".
+ */
+export function isUnlinkConfigured(): boolean {
+  return !isDemoMode() && !!UNLINK_API_KEY;
+}
+
+/**
  * True when we should run every adapter in deterministic simulated mode.
  *
  * Demo mode is on when EITHER:

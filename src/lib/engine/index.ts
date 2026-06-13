@@ -13,11 +13,13 @@ import { buildClaimUrl } from "./claimLink";
 import { deriveCounterfactual, generateClaimSecret } from "./counterfactual";
 import { resolve } from "./resolve";
 import { settle } from "./settle";
+import { shield } from "./shield";
 import {
   CLAIM_PAYLOAD_VERSION,
   EngineStep,
   type ClaimPayload,
   type EngineResult,
+  type PrivacyArtifacts,
   type SendRequest,
   type StepListener,
   type StepState,
@@ -46,8 +48,7 @@ export async function runSend(
     onStep?.(state);
   };
 
-  // Steps wired by later agents start as "queued" so they render honestly.
-  emit({ step: EngineStep.Shield, status: "queued", detail: "Privacy leg — wires next" });
+  // Claim-side steps render as "queued" until the recipient taps the link.
   emit({ step: EngineStep.SponsorGas, status: "queued", detail: "Gas sponsored at claim" });
   emit({ step: EngineStep.Claim, status: "queued", detail: "Recipient claims via link" });
 
@@ -89,29 +90,78 @@ export async function runSend(
     detail: `Account ${shortAddr(cf.address)} (undeployed)`,
   });
 
-  // Step 5 — Settle USDC to the counterfactual address.
+  const amountUsdc = req.amountUsd.toFixed(2);
+
+  // Step 4 — Shield: route settlement through an Unlink shielded balance.
+  // Deposit USDC into the sender's private balance, then privately transfer it
+  // to the claim's unlink address. The private transfer is the leg where the
+  // amount and the sender↔recipient edge vanish on-chain.
+  emit({ step: EngineStep.Shield, status: "running" });
+  const { privacy } = await shield(amountUsdc, secret);
+  if (privacy.enabled) {
+    emit({
+      step: EngineStep.Shield,
+      status: "done",
+      detail: privacy.legs.some((l) => l.simulated)
+        ? "Shielded — amount & graph hidden (simulated)"
+        : "Shielded — amount & graph hidden",
+      // The PUBLIC deposit edge is the only readable artifact of this step.
+      explorerUrl: privacy.legs.find((l) => l.kind === "shield")?.explorerUrl,
+    });
+  } else {
+    emit({
+      step: EngineStep.Shield,
+      status: "done",
+      detail: "Skipped (flag) — settling directly",
+    });
+  }
+
+  // Step 5 — Settle. When shielded, the value already moved privately into the
+  // claim's shielded balance; the "settle" artifact for the UI is the public
+  // deposit edge (no separate public USDC transfer to the counterfactual). When
+  // the privacy path degraded, fall back to a direct USDC settle.
   emit({ step: EngineStep.Settle, status: "running" });
-  const settled = await settle(cf.address, req.amountUsd, secret);
-  emit({
-    step: EngineStep.Settle,
-    status: "done",
-    detail: settled.tx.simulated ? "Settled (simulated)" : "Settled",
-    explorerUrl: settled.tx.explorerUrl,
-  });
+  let settleTx;
+  if (privacy.enabled) {
+    const depositLeg = privacy.legs.find((l) => l.kind === "shield");
+    settleTx = {
+      hash: depositLeg?.txHash ?? ("0x" as `0x${string}`),
+      explorerUrl: depositLeg?.explorerUrl ?? "",
+      simulated: depositLeg?.simulated ?? true,
+    };
+    emit({
+      step: EngineStep.Settle,
+      status: "done",
+      detail: "Parked in shielded balance until claim",
+      explorerUrl: settleTx.explorerUrl || undefined,
+    });
+  } else {
+    const settled = await settle(cf.address, req.amountUsd, secret);
+    settleTx = settled.tx;
+    emit({
+      step: EngineStep.Settle,
+      status: "done",
+      detail: settled.tx.simulated ? "Settled (simulated)" : "Settled",
+      explorerUrl: settled.tx.explorerUrl,
+    });
+  }
 
   const claimPayload: ClaimPayload = {
     v: CLAIM_PAYLOAD_VERSION,
     secret,
-    amountUsdc: req.amountUsd.toFixed(2),
+    amountUsdc,
     senderName: req.senderName,
     region: req.region,
     createdAt: new Date().toISOString(),
   };
 
+  const privacyArtifacts: PrivacyArtifacts = privacy;
+
   return {
     secret,
     counterfactualAddress: cf.address,
-    settleTx: settled.tx,
+    settleTx,
+    privacy: privacyArtifacts,
     claimPayload,
     steps,
   };

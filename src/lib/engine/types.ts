@@ -97,6 +97,61 @@ export interface TxRef {
   simulated: boolean;
 }
 
+/**
+ * One leg of the privacy (Unlink) path, captured for the Phase 7 "/private"
+ * proof view. The three legs differ in what an on-chain observer can read:
+ *
+ *  - `shield`   (deposit):  PUBLIC edge — funding source + amount are visible.
+ *  - `transfer` (unlink→unlink): the PRIVATE middle — a ZK proof submission with
+ *                NO readable amount, sender, recipient, or token. There is no
+ *                ordinary tx hash to link; `txHash`/`explorerUrl` are absent and
+ *                `public` is false. A `proofRef` / `nullifier` stands in.
+ *  - `unshield` (withdraw): PUBLIC edge — destination EOA + amount are visible.
+ *
+ * The whole point of the bounty: deposit in + withdraw out are readable, the
+ * middle is not. {@link PrivacyArtifacts} bundles the three so the proof view
+ * can render "here's what's on-chain: in, out, NO readable middle".
+ */
+export interface PrivacyLeg {
+  /** Which leg this is. */
+  kind: "shield" | "transfer" | "unshield";
+  /** Human label, e.g. "Deposit into shielded balance". */
+  label: string;
+  /** True when this leg leaves a PUBLIC, readable on-chain artifact (edges). */
+  public: boolean;
+  /** On-chain tx hash, ONLY for the public edges (shield/unshield). */
+  txHash?: Hex;
+  /** Explorer URL for `txHash`, when present. */
+  explorerUrl?: string;
+  /**
+   * For the private transfer leg: an opaque proof / nullifier reference that
+   * models what the explorer would show (a proof submission), with no readable
+   * amount or parties. Never present for the public edges.
+   */
+  proofRef?: string;
+  /** True when the underlying op was a deterministic demo simulation. */
+  simulated: boolean;
+}
+
+/**
+ * The privacy story for one send, captured at settle time for the proof view.
+ * `enabled` is false when the privacy path was skipped (flag off / real path
+ * degraded per PRD §8) — in that case the engine fell back to direct settle and
+ * `legs` is empty but `skippedReason` explains why.
+ */
+export interface PrivacyArtifacts {
+  /** True when settlement actually routed through the Unlink shielded balance. */
+  enabled: boolean;
+  /** Why the privacy path was skipped, when `enabled` is false. */
+  skippedReason?: string;
+  /** The sender's own shielded (unlink1…) address the funds were deposited to. */
+  senderUnlinkAddress?: string;
+  /** The claim's shielded (unlink1…) address the private transfer targeted. */
+  claimUnlinkAddress?: string;
+  /** Ordered legs: shield → transfer → (unshield happens at claim). */
+  legs: PrivacyLeg[];
+}
+
 /** Result of step 1 — resolve. */
 export interface ResolveResult {
   /** The address the recipient handle maps to (display only at this stage). */
@@ -201,6 +256,12 @@ export interface ClaimResult {
   recipientAddress: Address;
   /** The batched deploy-and-withdraw transaction (real or simulated). */
   withdrawTx: TxRef;
+  /**
+   * The Unlink unshield (withdraw) leg, when the claim pulled funds out of the
+   * shielded balance. This is the PUBLIC "out" edge for the proof view. Absent
+   * when the privacy path was skipped (direct claim).
+   */
+  unshield?: PrivacyLeg;
   /** What the recipient received after FX (token + amount). */
   fx: FxResult;
   /** Final per-step states (for the receipt / re-open view). */
@@ -217,6 +278,11 @@ export interface EngineResult {
   counterfactualAddress: Address;
   /** Settlement transaction. */
   settleTx: TxRef;
+  /**
+   * The send-side privacy story (shield + private transfer), captured for the
+   * proof view. `enabled` is false when the privacy path was skipped per §8.
+   */
+  privacy: PrivacyArtifacts;
   /** The payload encoded into the claim link fragment. */
   claimPayload: ClaimPayload;
   /** Final per-step states (for the architecture reveal / receipts). */

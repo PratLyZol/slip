@@ -15,6 +15,14 @@ export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
 export const ARC_FAUCET_URL = "https://faucet.circle.com";
 
 /**
+ * Unlink hosted-environment name for Arc testnet. The SDK maps this string to
+ * its Engine URL (`https://arc-testnet-production-api.unlink.xyz`) and resolves
+ * the on-chain verifier contract internally. Confirmed in
+ * @unlink-xyz/sdk ENVIRONMENTS (chain id 5042002).
+ */
+export const UNLINK_ARC_ENVIRONMENT = "arc-testnet" as const;
+
+/**
  * USDC on Arc — the native gas token's ERC-20 interface.
  * 6 decimals as ERC-20, 18 in native gas accounting (same underlying balance).
  */

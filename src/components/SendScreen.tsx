@@ -18,6 +18,10 @@ import { useWallet } from "./WalletProvider";
 import EngineSteps from "./EngineSteps";
 import SuccessCard from "./SuccessCard";
 import { formatAmount } from "@/lib/format";
+import {
+  sentReceiptFromResult,
+  saveSentReceipt,
+} from "@/lib/engine/sentStore";
 
 type Phase = "idle" | "running" | "done";
 
@@ -60,6 +64,8 @@ export default function SendScreen() {
         },
         onStep,
       );
+      // Persist the send-side privacy artifacts for the /private proof view.
+      saveSentReceipt(res.secret, sentReceiptFromResult(res));
       setResult(res);
       setPhase("done");
     } catch (e) {
@@ -137,10 +143,10 @@ export default function SendScreen() {
         />
       </div>
 
-      {/* Region — drives FX at claim (wired later). */}
+      {/* Where the recipient is — drives FX into their local money at claim. */}
       <div className="mt-4">
         <span className="text-[12px] font-medium uppercase tracking-wide text-text-faint">
-          They receive in
+          Where are they?
         </span>
         <div className="mt-2 flex gap-2">
           {(["US", "EU"] as const).map((r) => (
@@ -154,10 +160,13 @@ export default function SendScreen() {
                   : "border-[var(--hair)] bg-ink-850 text-text-dim hover:text-text"
               }`}
             >
-              {r === "US" ? "USDC · US" : "EURC · EU"}
+              {r === "US" ? "🇺🇸 United States" : "🇪🇺 Europe"}
             </button>
           ))}
         </div>
+        <p className="mt-2 text-[11px] text-text-faint">
+          They&apos;ll get their money in {region === "EU" ? "euros (EURC)" : "dollars (USDC)"}.
+        </p>
       </div>
 
       {error && (

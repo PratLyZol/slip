@@ -27,6 +27,16 @@ export interface ClaimReceipt {
   rateUsed?: number;
   fxTxHash?: string;
   claimedAt: string;
+  /**
+   * The Unlink unshield (withdraw) leg — the PUBLIC "out" edge for the proof
+   * view. Present when the claim pulled funds out of the shielded balance.
+   */
+  unshield?: {
+    public: boolean;
+    txHash?: string;
+    explorerUrl?: string;
+    simulated: boolean;
+  };
 }
 
 function keyFor(secret: Hex): string {
@@ -49,6 +59,14 @@ export function receiptFromResult(result: ClaimResult): ClaimReceipt {
     rateUsed: result.fx.rateUsed,
     fxTxHash: result.fx.txHash,
     claimedAt: result.claimedAt,
+    unshield: result.unshield
+      ? {
+          public: result.unshield.public,
+          txHash: result.unshield.txHash,
+          explorerUrl: result.unshield.explorerUrl,
+          simulated: result.unshield.simulated,
+        }
+      : undefined,
   };
 }
 

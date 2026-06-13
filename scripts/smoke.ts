@@ -60,6 +60,47 @@ async function main() {
     "counterfactual address is not derivable from the secret",
   );
 
+  // --- Phase 3 (privacy) assertions: the bounty. ---
+  const shieldStep = seen.find((s) => s.step === "shield" && s.status === "done");
+  assert(shieldStep !== undefined, "shield step did not complete on send");
+  assert(result.privacy.enabled === true, "privacy path should be enabled in demo");
+  assert(
+    result.privacy.senderUnlinkAddress?.startsWith("unlink1") === true,
+    "sender unlink address should be a bech32 unlink1 address",
+  );
+  assert(
+    result.privacy.claimUnlinkAddress?.startsWith("unlink1") === true,
+    "claim unlink address should be a bech32 unlink1 address",
+  );
+
+  const depositLeg = result.privacy.legs.find((l) => l.kind === "shield");
+  const transferLeg = result.privacy.legs.find((l) => l.kind === "transfer");
+  assert(depositLeg !== undefined, "no shield (deposit) leg captured");
+  assert(transferLeg !== undefined, "no private transfer leg captured");
+
+  // The PUBLIC edge: deposit has a readable tx hash + explorer URL.
+  assert(depositLeg!.public === true, "deposit leg should be a public edge");
+  assert(
+    typeof depositLeg!.txHash === "string" && depositLeg!.txHash.startsWith("0x"),
+    "deposit leg must have a public tx hash",
+  );
+
+  // THE PRIVATE MIDDLE: the private transfer must leave NO public artifact —
+  // no tx hash, no explorer URL — only an opaque proof reference.
+  assert(transferLeg!.public === false, "private transfer must NOT be public");
+  assert(
+    transferLeg!.txHash === undefined,
+    "private transfer must NOT expose a tx hash (no readable middle)",
+  );
+  assert(
+    transferLeg!.explorerUrl === undefined,
+    "private transfer must NOT expose an explorer URL (no readable middle)",
+  );
+  assert(
+    typeof transferLeg!.proofRef === "string" && transferLeg!.proofRef.length > 0,
+    "private transfer should carry an opaque proof reference",
+  );
+
   // Round-trip the claim link.
   const fragment = encodeClaimFragment(result.claimPayload);
   const decoded = decodeClaimFragment("#" + fragment);
@@ -104,12 +145,45 @@ async function main() {
   );
   assert(claim.withdrawTx?.hash?.startsWith("0x"), "no withdraw tx hash");
   assert(claim.withdrawTx.simulated === true, "demo withdraw should be simulated");
-  // EU send → recipient receives EURC; amount passes through 1:1 in Phase 2.
+
+  // --- Phase 3: the claim-side unshield is the PUBLIC "out" edge. ---
+  assert(claim.unshield !== undefined, "no unshield (withdraw) leg captured");
+  assert(claim.unshield!.kind === "unshield", "unshield leg has wrong kind");
+  assert(claim.unshield!.public === true, "unshield should be a public edge");
+  assert(
+    typeof claim.unshield!.txHash === "string" &&
+      claim.unshield!.txHash.startsWith("0x"),
+    "unshield leg must have a public tx hash",
+  );
+
+  // --- Phase 4: EU recipient gets EURC at a realistic rate ≠ 1. ---
   assert(claim.fx.token === "EURC", "EU recipient should receive EURC");
-  assert(claim.fx.amount === "50.00", "recipient should end with the amount");
+  assert(claim.fx.rateUsed !== undefined, "EURC claim should carry an FX rate");
+  assert(claim.fx.rateUsed !== 1, "EURC FX rate must differ from 1");
+  assert(
+    claim.fx.rateUsed! >= 0.9 && claim.fx.rateUsed! <= 0.94,
+    `EURC rate ${claim.fx.rateUsed} should be a realistic EUR/USD figure`,
+  );
+  const expectedEurc = (50 * claim.fx.rateUsed!).toFixed(2);
+  assert(
+    claim.fx.amount === expectedEurc,
+    `recipient EURC amount ${claim.fx.amount} should equal 50 × rate (${expectedEurc})`,
+  );
+  assert(
+    typeof claim.fx.txHash === "string" && claim.fx.txHash!.startsWith("0x"),
+    "EURC conversion should have a StableFX settlement tx hash",
+  );
   assert(
     claimSeen[claimSeen.length - 1].step === "done",
     "claim should finish on the done step",
+  );
+
+  // Re-derivation determinism: the same secret must reproduce the same FX rate.
+  const { fxAtClaim } = await import("../src/lib/engine/fx.ts");
+  const reFx = await fxAtClaim("50.00", "EU", result.secret);
+  assert(
+    reFx.rateUsed === claim.fx.rateUsed,
+    "FX rate must be deterministic from the secret across re-renders",
   );
 
   console.log("✓ Recipient claimed — receipt:");

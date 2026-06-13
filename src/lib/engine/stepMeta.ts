@@ -36,12 +36,14 @@ export const STEP_META: Record<EngineStep, StepMeta> = {
   [EngineStep.Shield]: {
     step: EngineStep.Shield,
     title: "Shield the transfer",
-    blurb: "Route through a private balance so amount and graph stay invisible.",
+    blurb:
+      "Deposit USDC into an Unlink shielded balance, then privately transfer it to the claim — the leg where the amount and the sender→recipient edge vanish on-chain.",
   },
   [EngineStep.Settle]: {
     step: EngineStep.Settle,
-    title: "Settle USDC",
-    blurb: "Move USDC to the claim account. The account isn't deployed yet.",
+    title: "Park the money",
+    blurb:
+      "The value now sits in the claim's shielded balance, waiting. No public USDC transfer to the claim account ever happens.",
   },
   [EngineStep.SponsorGas]: {
     step: EngineStep.SponsorGas,
@@ -74,12 +76,13 @@ export const CLAIM_STEP_META: Record<ClaimStep, ClaimStepMeta> = {
   [ClaimStep.Withdraw]: {
     step: ClaimStep.Withdraw,
     title: "Release the money",
-    blurb: "Deploy and withdraw in one batched transaction.",
+    blurb:
+      "Withdraw out of the shielded balance to your account — the public 'out' edge. The shielded source stays unlinkable.",
   },
   [ClaimStep.Convert]: {
     step: ClaimStep.Convert,
     title: "Into your money",
-    blurb: "Convert to your local stablecoin at claim time.",
+    blurb: "Convert USDC to your local stablecoin at claim time, at a live FX rate.",
   },
   [ClaimStep.Done]: {
     step: ClaimStep.Done,

@@ -200,6 +200,48 @@ Source: <https://docs.unlink.xyz/how-unlink-works.md>, <https://www.unlink.xyz/>
 
 ---
 
+## Correction — verified against the INSTALLED package (2026-06-12, build agent)
+
+Installed `@unlink-xyz/sdk@0.3.0-canary.598` and read its `dist/*.d.ts`. The
+research above is broadly accurate; the following are CORRECTIONS / refinements
+that the implementation in `src/lib/adapters/unlink.ts` trusts over the notes:
+
+- **NO bare top-level export.** `package.json#exports` has only subpaths:
+  `./browser`, `./client`, `./admin`, `./advanced`, `./crypto`, `./react`.
+  Import `createUnlinkClient` + `account` from **`@unlink-xyz/sdk/client`**
+  (custodial/server) or `/browser` (non-custodial). There is no
+  `from "@unlink-xyz/sdk"`. Slip uses `/client` because accounts are derived
+  deterministically from the claim secret (no wallet signature in the loop).
+- **`account.fromSeed({ seed: Uint8Array, accountIndex?: number })`** exists and
+  is the right deterministic constructor — research only named `fromMnemonic`.
+  `fromMnemonic` takes `{ mnemonic: string, accountIndex? }` (no entropy field).
+  Slip derives `seed = bytes(keccak256(secret))` and uses `accountIndex` 0/1 to
+  separate the sender vs. claim account from one secret.
+- **`getAddress()` is ASYNC** (`(): Promise<string>`), returns the bech32
+  `unlink1…` string. (Research said "via `await client.getAddress()`" — also
+  true on the account itself: `await unlinkAccount.getAddress()`.)
+- **`TransactionHandle.txHash` is ALWAYS `null`.** The real relayer-broadcast
+  hash arrives on the `TransactionResult` from `await handle.wait()` —
+  `{ txId, status, txHash? }`. Read `result.txHash`, not `handle.txHash`.
+  `status` ∈ `accepted|prepared|proving|proved|broadcasting|relayed|processed|failed`.
+- **Custodial client needs providers.** `createUnlinkClient` (client subpath)
+  requires `register: (payload) => admin.users.register(payload)` and
+  `authorizationToken: { provider: () => admin.authorizationTokens.issue({ unlinkAddress }) }`,
+  where `admin = createUnlinkAdmin({ environment, apiKey })`. So the real path
+  needs a server-only `UNLINK_API_KEY` + a backend — it cannot run in the
+  browser. `@unlink-xyz/sdk/admin` sets `"browser": null` in its exports.
+  Slip's real path is therefore server-only and guarded with a `typeof window`
+  check; demo mode (no key) simulates all three legs deterministically.
+- **`transfer` params** confirmed: single `{ token, amount, recipientAddress }`
+  or batch `{ token, transfers: [{ recipientAddress, amount }] }` (the two are a
+  discriminated union — `amount`/`recipientAddress` are `never` in batch form).
+- **`withdraw` params** confirmed: `{ recipientEvmAddress, token, amount }`.
+- **`ENVIRONMENTS["arc-testnet"].engineUrl`** =
+  `https://arc-testnet-production-api.unlink.xyz` (confirmed in the dist types).
+- Private transfer leaves **no public tx hash** — there's only a `txId` to poll;
+  Slip surfaces it as an opaque `proofRef` (NOT an explorer link) for the proof
+  view, matching the "no readable middle" guarantee.
+
 ## Open items / things to confirm at build time
 - **UNVERIFIED** — Exact Unlink contract address(es) deployed on `arc-testnet` (not in public docs).
 - **UNVERIFIED** — Exact ETHGlobal Cannes Unlink/Dynamic prize line-item amounts (JS-rendered page

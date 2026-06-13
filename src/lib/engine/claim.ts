@@ -20,6 +20,7 @@
 
 import { isDemoMode } from "../config";
 import { simLatency, simTx, sleep } from "../demo/sim";
+import { getShieldOps, usdcToken } from "../adapters/unlink";
 import {
   addressFromSecret,
   recipientAddressFromSecret,
@@ -32,6 +33,7 @@ import {
   type ClaimResult,
   type ClaimStepListener,
   type ClaimStepState,
+  type PrivacyLeg,
   type TxRef,
 } from "./types";
 
@@ -117,9 +119,12 @@ export async function runClaim(
     });
   }
 
-  // Step 4 — Deploy + withdraw in ONE batched UserOp.
+  // Step 4 — Unshield from the claim's shielded balance into the recipient's
+  // public account. This is the PUBLIC "out" edge (destination + amount visible,
+  // source private account is NOT). Modeled as ONE batched op: deploy the
+  // counterfactual account + withdraw the money in a single step.
   emit({ step: ClaimStep.Withdraw, status: "running" });
-  const withdrawTx = await deployAndWithdraw(
+  const { withdrawTx, unshield } = await unshieldAndWithdraw(
     counterfactualAddress,
     recipientAddress,
     amountUsdc,
@@ -129,8 +134,8 @@ export async function runClaim(
     step: ClaimStep.Withdraw,
     status: "done",
     detail: withdrawTx.simulated
-      ? "1 batched transaction (simulated)"
-      : "1 batched transaction",
+      ? "Withdrawn from shielded balance (simulated)"
+      : "Withdrawn from shielded balance",
     explorerUrl: withdrawTx.explorerUrl,
   });
 
@@ -143,7 +148,8 @@ export async function runClaim(
     detail:
       fx.token === "USDC"
         ? "Delivered as USDC (no conversion)"
-        : `Converted to ${fx.token}`,
+        : `Converted to ${fx.amount} ${fx.token}` +
+          (fx.rateUsed && fx.rateUsed !== 1 ? ` @ ${fx.rateUsed}` : ""),
   });
 
   // Step 6 — Done.
@@ -153,6 +159,7 @@ export async function runClaim(
     counterfactualAddress,
     recipientAddress,
     withdrawTx,
+    unshield,
     fx,
     steps,
     claimedAt: new Date().toISOString(),
@@ -160,35 +167,55 @@ export async function runClaim(
 }
 
 /**
- * Deploy the counterfactual account and withdraw its USDC into the recipient's
- * account — modeled as ONE batched UserOp (PRD §2 step 7: "deploys the account
- * and withdraws in one batched UserOp").
+ * Pull the money out of the claim's Unlink shielded balance into the
+ * recipient's public account (PRD §2 step 7 + Phase 3). This is the public
+ * "out" edge of the privacy path: the Unlink `withdraw` reveals destination +
+ * amount but NOT the shielded source.
  *
- * Demo: a single deterministic simulated tx hash represents the batched op.
- * Real path: a stub (see below) until 4337 infra is available on Arc.
+ * Returns both a {@link TxRef} (the withdraw tx, modeling the batched
+ * deploy-and-withdraw for the existing receipt/UI) and the {@link PrivacyLeg}
+ * for the proof view. On any real-path failure, degrades to a labeled
+ * simulation so the claim still completes (PRD §8).
  */
-async function deployAndWithdraw(
+async function unshieldAndWithdraw(
   counterfactual: string,
   recipient: string,
   amountUsdc: string,
   secret: ClaimPayload["secret"],
-): Promise<TxRef> {
-  if (isDemoMode()) {
+): Promise<{ withdrawTx: TxRef; unshield: PrivacyLeg }> {
+  const ops = getShieldOps();
+  try {
+    const leg = await ops.unshield(secret, recipient, usdcToken(amountUsdc));
+    const hash =
+      leg.txHash ?? simTx("claim-batch", counterfactual, recipient, amountUsdc, secret).hash;
+    const withdrawTx: TxRef = {
+      hash,
+      explorerUrl: leg.explorerUrl ?? simTx("claim-batch", counterfactual, recipient, amountUsdc, secret).explorerUrl,
+      simulated: leg.simulated,
+    };
+    return { withdrawTx, unshield: leg };
+  } catch (err) {
+    // PRD §8: never block the claim on the privacy leg — fall back to a labeled
+    // simulated batched op and a synthetic public unshield leg.
+    const reason =
+      err instanceof Error ? err.message : "Unlink withdraw unavailable";
+    if (!isDemoMode()) {
+      console.warn(
+        `[slip] real unshield failed — simulating batched withdraw. (${reason})`,
+      );
+    }
     await sleep(simLatency(700, 1600));
-    return simTx("claim-batch", counterfactual, recipient, amountUsdc, secret);
+    const tx = simTx("claim-batch", counterfactual, recipient, amountUsdc, secret);
+    return {
+      withdrawTx: tx,
+      unshield: {
+        kind: "unshield",
+        label: "Withdraw from shielded balance",
+        public: true,
+        txHash: tx.hash,
+        explorerUrl: tx.explorerUrl,
+        simulated: true,
+      },
+    };
   }
-
-  // NOT YET WIRED — real batched deploy-and-withdraw UserOp.
-  // Real path (later agent): build a 4337 UserOp with the account's initCode
-  // (CREATE2 deploy) batched with the USDC withdraw/transfer to `recipient`,
-  // sign it with the key derived from the secret, sponsor via paymaster, and
-  // submit through the bundler. Needs an EntryPoint + bundler + paymaster on Arc
-  // (not published — get from the AA provider). PRD §8 fallback: pre-deploy the
-  // account on claim and keep gasless via a funded relayer. Until that infra
-  // exists, fall back to a labeled simulation so the demo claim still completes.
-  console.warn(
-    "[slip] real deploy-and-withdraw UserOp not wired yet — simulating batched op.",
-  );
-  await sleep(simLatency(700, 1600));
-  return simTx("claim-batch", counterfactual, recipient, amountUsdc, secret);
 }
