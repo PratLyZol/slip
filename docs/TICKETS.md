@@ -11,6 +11,26 @@ hot-spot file (coordinate / single owner).
 
 ---
 
+## Status (updated 2026-06-13)
+
+**Done & on `main`:** Wave 0 (T0.1–T0.3 — types frozen, config gates, route stubs) ·
+Track C (CCTP bridge wired into engine) · Track D1 (StableFX adapter, sim in demo) · design
+system + Railway deploy. Screens already pass `recipients[]`.
+
+**Critical path remaining:** **B** (Unlink still the OLD custodial path — privacy rewrite
+not done) · **E** (engine still single-recipient shim) · **A1** (pregen route returns a demo
+address) · **F2** (full multi-row batch UI).
+
+**Lower priority:** D2/D3 (Swap fallback — StableFX D1 already covers FX) · Wave 2 (live tests).
+
+**Deviation to note:** config uses `CIRCLE_STABLEFX_API_KEY` (not `STABLEFX_API_KEY`).
+
+**Parallel set to run now (4 agents, disjoint files):** B · A1 · E · F2. Prompts in
+`docs/prompts/`. Rule: only the **E** agent edits `engine/index.ts`+`claim.ts`; A/B deliver
+adapter+route files; F edits screens.
+
+---
+
 ## Wave 0 — Foundation (blocks everything; ~half a day; 1 owner)
 
 ### T0.1 — Bootstrap & config
@@ -53,14 +73,14 @@ hot-spot file (coordinate / single owner).
   authorization-token. *Files:* `api/unlink/register/route.ts`, `api/unlink/authorization-token/route.ts`.
 
 ### Track C — Aggregation (CCTP)
-- [ ] **C1 — Bridge adapter** 🔑(`CCTP_PRIVATE_KEY` for live): `bridge-kit`, bridge **Σ once**
+- [x] **C1 — Bridge adapter** 🔑(`CCTP_PRIVATE_KEY` for live): `bridge-kit`, bridge **Σ once**
   (Base Sepolia → Arc, forwarder); demo sim. *Files:* `src/lib/adapters/bridge.ts`;
   add CCTP addrs + chain ids to `src/lib/adapters/arc.ts`.
-- [ ] **C2 — Wire bridge into engine:** bridge before shield, await mint, keep gas buffer.
+- [x] **C2 — Wire bridge into engine:** bridge before shield, await mint, keep gas buffer.
   *Files:* `src/lib/engine/aggregate.ts`, `src/lib/engine/shield.ts`.
 
 ### Track D — FX (build last; lower priority than batch/privacy)
-- [ ] **D1 — StableFX adapter** 🔑(`STABLEFX_API_KEY`): real REST quote→sign→trade→presign→
+- [x] **D1 — StableFX adapter** 🔑(`STABLEFX_API_KEY`): real REST quote→sign→trade→presign→
   sign→fund→poll; **read domain/spender/typedData from the API response**. *Files:*
   `src/lib/adapters/fx-stablefx.ts`, `api/fx/route.ts`.
 - [ ] **D2 — Swap Kit fallback** 🔑(`CIRCLE_KIT_KEY`): USDC→EURC server route. *Files:*
