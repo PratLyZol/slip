@@ -21,7 +21,7 @@ const STORAGE_PREFIX = "slip:sent:";
 export interface SentReceipt {
   amountUsdc: string;
   region?: "US" | "EU";
-  senderName?: string;
+  senderLabel?: string;
   counterfactualAddress: string;
   settleTxHash: string;
   settleExplorerUrl: string;
@@ -43,7 +43,7 @@ export function sentReceiptFromResult(result: EngineResult): SentReceipt {
   return {
     amountUsdc: result.claimPayload.amountUsdc,
     region: result.claimPayload.region,
-    senderName: result.claimPayload.senderName,
+    senderLabel: result.claimPayload.senderLabel,
     counterfactualAddress: result.counterfactualAddress,
     settleTxHash: result.settleTx.hash,
     settleExplorerUrl: result.settleTx.explorerUrl,

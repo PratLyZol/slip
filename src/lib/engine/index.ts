@@ -11,7 +11,11 @@ import { DEMO_SENDER } from "../config";
 import { formatUsd } from "../format";
 import { aggregate, bridgeToArc } from "./aggregate";
 import { buildClaimUrl } from "./claimLink";
-import { deriveCounterfactual, generateClaimSecret } from "./counterfactual";
+import {
+  deriveCounterfactual,
+  generateClaimSecret,
+  recipientAddressFromSecret,
+} from "./counterfactual";
 import { resolve } from "./resolve";
 import { settle } from "./settle";
 import { shield } from "./shield";
@@ -34,13 +38,19 @@ function shortAddr(addr: string): string {
 /**
  * Run a single send through the engine.
  *
- * @param req       the send request (recipient, amount, optional sender/region)
+ * @param req       the send request (recipients[], optional sender label)
  * @param onStep    optional listener fired as each step transitions (live UI)
  */
 export async function runSend(
   req: SendRequest,
   onStep?: StepListener,
 ): Promise<EngineResult> {
+  // TODO(E1): full batch fan-out — for now process the first recipient only.
+  // (Single-send = recipients.length === 1; the batch surface runs one row per
+  // call via runSend, so a single-recipient shim keeps everything compiling.)
+  const recipient = req.recipients[0];
+  if (!recipient) throw new Error("Send request has no recipients.");
+
   const steps: StepState[] = [];
   const emit = (state: StepState) => {
     const idx = steps.findIndex((s) => s.step === state.step);
@@ -55,7 +65,7 @@ export async function runSend(
 
   // Step 1 — Resolve.
   emit({ step: EngineStep.Resolve, status: "running" });
-  const resolved = await resolve(req.recipient);
+  const resolved = await resolve(recipient.identifier);
   const resolveSuffix =
     resolved.via === "ens"
       ? " (via ENS)"
@@ -65,7 +75,7 @@ export async function runSend(
   emit({
     step: EngineStep.Resolve,
     status: "done",
-    detail: `${req.recipient} → ${shortAddr(resolved.address)}${resolveSuffix}`,
+    detail: `${recipient.identifier} → ${shortAddr(resolved.address)}${resolveSuffix}`,
   });
 
   // Step 2 — Aggregate. Two parts: (a) verify the sender holds enough USDC,
@@ -74,7 +84,7 @@ export async function runSend(
   // §4: Dynamic has no aggregate product, so CCTP genuinely IS "aggregation"
   // here. We bridge the TOTAL once and await the mint before shielding.
   emit({ step: EngineStep.Aggregate, status: "running" });
-  const agg = await aggregate(req.amountUsd);
+  const agg = await aggregate(recipient.amountUsd);
   if (!agg.sufficient) {
     emit({
       step: EngineStep.Aggregate,
@@ -82,7 +92,7 @@ export async function runSend(
       detail: `Insufficient USDC (have ${formatUsd(agg.availableUsdc)})`,
     });
     throw new Error(
-      `Insufficient USDC balance: have ${formatUsd(agg.availableUsdc)}, need ${formatUsd(req.amountUsd)}.`,
+      `Insufficient USDC balance: have ${formatUsd(agg.availableUsdc)}, need ${formatUsd(recipient.amountUsd)}.`,
     );
   }
 
@@ -90,15 +100,15 @@ export async function runSend(
   // before the shield). In real mode this is a live CCTP burn+mint; on failure
   // it throws honestly (no silent fallback) and the send aborts at this step.
   const bridge = await bridgeToArc({
-    amountUsdc: req.amountUsd.toFixed(2),
+    amountUsdc: recipient.amountUsd.toFixed(2),
     recipientAddress: DEMO_SENDER.address,
   });
   emit({
     step: EngineStep.Aggregate,
     status: "done",
     detail: bridge.simulated
-      ? `Bridged ${formatUsd(req.amountUsd)} onto Arc via CCTP (simulated)`
-      : `Bridged ${formatUsd(req.amountUsd)} onto Arc via CCTP`,
+      ? `Bridged ${formatUsd(recipient.amountUsd)} onto Arc via CCTP (simulated)`
+      : `Bridged ${formatUsd(recipient.amountUsd)} onto Arc via CCTP`,
     // The mint on Arc is the readable artifact of the aggregation step.
     explorerUrl: bridge.mintTx.explorerUrl,
   });
@@ -113,7 +123,7 @@ export async function runSend(
     detail: `Account ${shortAddr(cf.address)} (undeployed)`,
   });
 
-  const amountUsdc = req.amountUsd.toFixed(2);
+  const amountUsdc = recipient.amountUsd.toFixed(2);
 
   // Step 4 — Shield: route settlement through an Unlink shielded balance.
   // Deposit USDC into the sender's private balance, then privately transfer it
@@ -159,7 +169,7 @@ export async function runSend(
       explorerUrl: settleTx.explorerUrl || undefined,
     });
   } else {
-    const settled = await settle(cf.address, req.amountUsd, secret);
+    const settled = await settle(cf.address, recipient.amountUsd, secret);
     settleTx = settled.tx;
     emit({
       step: EngineStep.Settle,
@@ -173,8 +183,10 @@ export async function runSend(
     v: CLAIM_PAYLOAD_VERSION,
     secret,
     amountUsdc,
-    senderName: req.senderName,
-    region: req.region,
+    // Demo derivation until A1 wires real Dynamic pregen; keeps the payload valid.
+    recipientAddress: recipientAddressFromSecret(secret),
+    senderLabel: req.senderName,
+    region: recipient.region,
     createdAt: new Date().toISOString(),
   };
 
