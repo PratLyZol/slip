@@ -52,7 +52,7 @@ requirement — see decision #9. None of the above depend on it.
 7. **Fan-out = N SEQUENTIAL `transfer()` calls** (≤2 recipients each). The batch form
    caps at `MAX_TRANSFER_RECIPIENTS = 2` (`spend_10x4_v1` circuit) — there is NO single
    N-recipient transfer. Loop N (or ⌈N/2⌉ paired) heavy proving ops; honor `Retry-After`
-   (SDK auto-retries 3×). Demo with ~5 recipients for snappiness; scales to ~25
+   (SDK auto-retries 3×). Default to ~5 recipients for snappiness; scales to ~25
    sequentially.
 8. **Claim = N independent withdrawals.** Each recipient's browser re-derives its account
    from its secret and `withdraw()`s to its pregen address (relayer-submitted, gasless).
@@ -63,7 +63,8 @@ requirement — see decision #9. None of the above depend on it.
    "FX" is a destination-token choice, not a swap.
    - **Optional upgrade (stretch):** a real on-chain USDC→EURC swap via **Circle Swap Kit**
      (`@circle-fin/swap-kit`, **free self-serve** kit key) — gate behind one confirmed live
-     swap; demo sim is the fallback. Adds a genuine FX leg if we want it; not required.
+     swap; if the swap is unavailable, fall back to direct-EURC delivery. Adds a genuine FX
+     leg if we want it; not required.
 10. **StableFX is DROPPED.** Its key is contact-a-rep only and **no bounty track requires it**
     — keeping it added a human-gated dependency for zero bounty value. Remove the
     `fx-stablefx.ts` adapter; replace with the direct-EURC delivery above (+ optional Swap
@@ -85,11 +86,11 @@ property. (Total outflow Σ is public; conversion is post-withdraw and public.)
 **Two tiers, stated honestly:**
 - **Batch (N>1) — self-contained unlinkability.** The anonymity comes from your *own*
   transaction set (N hidden transfers, N unrelated payouts). Independent of strangers.
-  **This is what we demo.**
+  **This is the hero flow.**
 - **Single (N=1) — pool-inherited.** A lone deposit→withdraw of equal size is the classic
   mixer tell; its privacy depends entirely on the shared Unlink pool's ambient traffic,
-  which on **Arc testnet is thin/near-zero at demo time**. Architecturally real, demo-time
-  weak. So single-send is the UX on-ramp, **not** a privacy claim.
+  which on **Arc testnet is thin/near-zero right now**. Architecturally real, but weak in
+  practice. So single-send is the UX on-ramp, **not** a privacy claim.
 
 Do not let "inherits the pool's set" quietly become "is private on testnet right now."
 
@@ -245,10 +246,10 @@ want a live USDC→EURC swap.
 
 ---
 
-## 6. Build order (each phase compiles + demo stays green)
+## 6. Build order (each phase compiles + the real path stays working)
 
-> Every real adapter is flag-gated; absent its key it falls back to the existing
-> deterministic simulation. Demo mode must never break.
+> Each real adapter is wired against its live SDK and gated on its key being present.
+> Each phase compiles and `npm run build` passes; the real path must stay working.
 
 **P0 — Foundations:** `npm install`; add `@circle-fin/bridge-kit @circle-fin/adapter-viem-v2`
 (`@circle-fin/swap-kit` only if doing the optional Swap FX stretch). `import "server-only"` in
@@ -269,7 +270,7 @@ Sepolia config + `isBridgeConfigured()`/`isPregenConfigured()`/`isFxConfigured()
 - `resolve.ts` — email/phone → pregen address.
 - `claim.ts` — payout = pregen address (drop `recipientAddressFromSecret`); relabel
   SponsorGas/Withdraw as relayer steps.
-- `counterfactual.ts` — demote `recipientAddressFromSecret` to demo-only.
+- `counterfactual.ts` — demote/remove `recipientAddressFromSecret` (legacy).
 
 **P3 — Real Unlink (browser client + faucet shield + sequential fan-out):** rewrite
 `adapters/unlink.ts` real path to `@unlink-xyz/sdk/browser` (`account.fromSeed` +
@@ -295,14 +296,14 @@ isolated). `ClaimScreen.tsx` OTP-login gate → withdraw.
 
 ---
 
-## 7. Demo honesty (say it before a judge finds it)
+## 7. Honesty (say it before a judge finds it)
 
 - **Real:** CCTP bridge (Σ onto Arc — the chain-abstraction story), shielded batch transfers
   + withdrawals (the privacy property), Dynamic pregen + OTP claim, and **local-currency
   delivery** (EU recipients receive real testnet EURC, others USDC — delivered directly).
 - **Optional real FX:** if the Swap Kit stretch is wired, a live on-chain USDC→EURC swap;
   otherwise EURC is delivered directly (still real money, real coin) — no fabricated rates.
-- **Privacy is demo'd at N>1** (self-contained); single-send is the on-ramp, not a privacy
+- **Privacy is self-contained at N>1**; single-send is the on-ramp, not a privacy
   claim (§1).
 
 ---
@@ -312,7 +313,7 @@ isolated). `ClaimScreen.tsx` OTP-login gate → withdraw.
 1. **Faucet per-call max + cooldown** — determines whether Σ shields in one faucet call vs
    split vs deposit fallback. Discover empirically with the key.
 2. **Proving (`heavy`) rate-limit numbers** — whether ~25 sequential transfers throttle.
-   Mitigated by SDK 3× retry + `Retry-After` + inter-call delay; demo ~5 recipients.
+   Mitigated by SDK 3× retry + `Retry-After` + inter-call delay; ~5 recipients.
 3. **(Only if doing the optional Swap stretch)** Swap Kit USDC→EURC direction + liquidity
    depth on Arc testnet — one live swap. Not needed for the default direct-EURC delivery.
 4. **Pregen address stability across pregen→claim** — 1-min test (strongly implied by MPC).

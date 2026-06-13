@@ -19,7 +19,7 @@
  * wallet the recipient auto-associates by OTP login).
  */
 
-import { isDemoMode } from "../config";
+import { isDemoMode, isRealPayoutSafe } from "../config";
 import { simLatency, simTx, sleep } from "../demo/sim";
 import { getShieldOps } from "../adapters/unlink";
 import { addressFromSecret } from "./counterfactual";
@@ -173,7 +173,23 @@ async function unshieldAndWithdraw(
   secret: ClaimPayload["secret"],
 ): Promise<{ withdrawTx: TxRef; unshield: PrivacyLeg }> {
   const ops = getShieldOps();
+
+  // CRITICAL SAFETY GUARD (Task #2), enforced a second time at the engine layer
+  // (the adapter's real `unshield` also guards — defense in depth). If the live
+  // Unlink path is selected but the recipient payout address is NOT a
+  // verified-real Dynamic pregen wallet (DYNAMIC_API_TOKEN absent → the address
+  // is the KEYLESS `demoAddressFor(identifier)`), do NOT even attempt the real
+  // withdraw: real shielded USDC must never land in an address nobody controls.
+  // Fall straight through to the labeled simulation so the claim still
+  // completes, honestly marked as simulated.
+  const realWithdrawBlocked = ops.real && !isRealPayoutSafe();
   try {
+    if (realWithdrawBlocked) {
+      throw new Error(
+        "Real payout blocked — recipient address is not a verified-real Dynamic " +
+          "pregen wallet (keyless demo address); refusing to send real funds.",
+      );
+    }
     const leg = await ops.unshield(secret, recipient, amountUsdc);
     const hash =
       leg.txHash ?? simTx("claim-batch", counterfactual, recipient, amountUsdc, secret).hash;
@@ -188,7 +204,13 @@ async function unshieldAndWithdraw(
     // simulated batched op and a synthetic public unshield leg.
     const reason =
       err instanceof Error ? err.message : "Unlink withdraw unavailable";
-    if (!isDemoMode()) {
+    if (realWithdrawBlocked) {
+      // Not a failure — an intentional safety refusal. Log loudly so it is never
+      // mistaken for a silent fund movement.
+      console.warn(
+        `[slip] SAFETY: real withdraw refused (keyless recipient) — simulating instead. (${reason})`,
+      );
+    } else if (!isDemoMode()) {
       console.warn(
         `[slip] real unshield failed — simulating batched withdraw. (${reason})`,
       );

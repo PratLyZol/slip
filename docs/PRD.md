@@ -8,7 +8,7 @@
 
 ## 0. Context
 
-- **Event:** ETHGlobal New York 2026, 36-hour hackathon, Arc testnet. This is a **proof of concept**, not a protocol. Demo quality > completeness.
+- **Event:** ETHGlobal New York 2026, 36-hour hackathon, Arc testnet. This is a **proof of concept**, not a protocol. Polish of the live flow > completeness.
 - **Hard rule — 3 sponsor SDKs maximum per project.** Ours: **Dynamic + Unlink + Arc (Circle)**. No LI.FI, no Privy, no fourth sponsor SDK. ENS is used only as a plain public-resolver *read* (name → address), not an SDK integration.
 - **This stack is a funded bounty.** Dynamic's NYC prize page has a track for combining **Dynamic + Unlink for private payments on Arc testnet**.
 - **Everything is on Arc testnet.** Unlink shielding and Arc FX both live on Arc; no public bridge hop between the private leg and the FX leg. Never bridge shielded funds across a public hop.
@@ -33,7 +33,7 @@ Build A's engine completely before touching B.
 6. **Sponsor gas** via paymaster — neither party needs the native token.
 7. **Claim:** link/QR → first transaction **deploys the account and withdraws in one batched UserOp** → **Arc FX** converts USDC → recipient's **local stablecoin** (EURC in EU, USDC elsewhere) at claim time.
 
-Demo kill-shot: judge does step 1 and gets a result; reveal steps 2–7; open the block explorer and show **even the builder can't read the amount or the graph.**
+Kill-shot: judge does step 1 and gets a result; reveal steps 2–7; open the block explorer and show **even the builder can't read the amount or the graph.**
 
 ## 3. Design decisions (made — do not relitigate)
 
@@ -82,13 +82,13 @@ Mainnet/real money/KYC/compliance; expired/double-claimed/lost links; >2 destina
 
 ## 8. Risks + fallbacks
 
-- **Unlink stalls →** ship 0–2 + 4 fully; privacy behind a flag; demo shielding on whatever subset works.
+- **Unlink stalls →** ship 0–2 + 4 fully; privacy behind a flag; ship shielding on whatever subset works.
 - **Arc FX missing a pair →** settle USDC, hardcode one EURC recipient.
 - **Counterfactual deploy-and-withdraw fails →** pre-deploy on claim; keep gasless via paymaster.
 - **Paymaster broken →** funded relayer covers gas; user never sees a gas prompt.
 - **Aggregation flaky →** sender already holds USDC; aggregation becomes a code-path talking point.
 
-## 9. Demo script (2 minutes)
+## 9. Walkthrough (2 minutes)
 
 1. **It just works.** Name + amount + Send → "Sent." Second device taps link → money's there, in their currency.
 2. **The reveal.** Architecture view, seven steps. Privacy was never a button.

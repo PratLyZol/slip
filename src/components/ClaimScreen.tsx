@@ -71,8 +71,25 @@ export default function ClaimScreen() {
   const [steps, setSteps] = useState<Partial<Record<ClaimStep, ClaimStepState>>>(
     {},
   );
+  // Set when OTP verified but the logged-in wallet is NOT the intended
+  // recipient. We refuse to claim and tell them to use the right email.
+  const [wrongEmail, setWrongEmail] = useState(false);
 
   const phase = override ?? initial;
+
+  // Same-email enforcement WITHOUT a db: after OTP verify, the address of the
+  // wallet the recipient just logged into must match payload.recipientAddress
+  // (the pregen wallet the funds are destined for). Compare case-insensitively;
+  // only then run the claim. Otherwise refuse and keep the gate up.
+  function handleVerified(payload: ClaimPayload, walletAddress: string) {
+    const intended = payload.recipientAddress.toLowerCase();
+    if (walletAddress.toLowerCase() !== intended) {
+      setWrongEmail(true);
+      return;
+    }
+    setWrongEmail(false);
+    handleClaim(payload);
+  }
 
   async function handleClaim(payload: ClaimPayload) {
     setSteps({});
@@ -118,9 +135,24 @@ export default function ClaimScreen() {
     );
   }
 
-  // login — simulated email/SMS OTP gate. On verify, run the real claim.
+  // login — REAL Dynamic email OTP gate. On verify we get the logged-in wallet
+  // address; only claim if it matches the intended recipient (handleVerified).
   if (phase.kind === "login") {
-    return <OtpLogin onVerified={() => handleClaim(phase.payload)} />;
+    return (
+      <div className="flex flex-1 flex-col">
+        <OtpLogin
+          onVerified={(walletAddress) =>
+            handleVerified(phase.payload, walletAddress)
+          }
+        />
+        {wrongEmail && (
+          <p className="mt-3 text-center text-[13px] text-danger">
+            That&apos;s not the inbox this was sent to — use the email this was
+            sent to.
+          </p>
+        )}
+      </div>
+    );
   }
 
   // ready | claiming

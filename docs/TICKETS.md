@@ -1,10 +1,8 @@
 # Slip — Build Tickets (parallelized)
 
 > Companion to `docs/PLAN.md`. Tickets are sliced along the repo's **adapter-interface
-> seams** so they parallelize cleanly: once Wave 0 freezes the types/interfaces, the engine
-> and UI run on *demo* adapters while each *real* adapter is built independently and swapped
-> in behind its interface. **Keys never block coding** — every real adapter is built/tested
-> in demo mode first; the key just flips it live.
+> seams** so they parallelize cleanly: once Wave 0 freezes the types/interfaces, each real
+> adapter is built independently behind its interface and activated by its own key/credential.
 
 Legend: ⭐ keystone · 🔑 needs a credential for LIVE (builds with stub first) · 🔥 shared
 hot-spot file (coordinate / single owner).
@@ -21,7 +19,7 @@ Stablecoin Logic"** (programmable payroll); plus Dynamic + Unlink sponsor bounti
 **Done & on `main`:** Wave 0 · A1 (pregen) · Track B (Unlink browser rewrite + auth routes,
 PR #3) · Track C (CCTP) · Track E (batch fan-out, PR #3) + batch surface wired to
 `runBatchSend` (PR #4) · Track F (batch + claim OTP + proof views, PR #2) · design + Railway
-config. **Full demo runs green end-to-end (single + 6-row batch, single Σ-shield, no
+config. **Full real flow runs end-to-end (single + 6-row batch, single Σ-shield, no
 cross-leakage).** Note: D1 StableFX shipped but is now being **REMOVED** (see below).
 
 **FX change:** **StableFX is DROPPED** (contact-a-rep key; no bounty needs it). Local currency
@@ -30,7 +28,7 @@ directly, no swap, no key. Optional stretch: real USDC→EURC via Swap Kit (free
 
 **Remaining:** **D-fix** (remove `fx-stablefx.ts`; `fxAtClaim` → token-selector) · **A2**
 (real-mode sender login/balance — minor) · optional Swap Kit stretch · **Wave 2** (gather keys
-→ flip demo→real → one live testnet batch → deploy + domain).
+→ wire keys → one live testnet batch → deploy + domain).
 
 **Deploy:** Railway is set up + auto-deploys on push to `main`. Earlier deploys failed on a
 stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys clean; then
@@ -70,7 +68,7 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 
 ### Track A — Identity (Dynamic)
 - [x] **A1 — Pregen adapter** 🔑(`DYNAMIC_API_TOKEN`): real `waas/create` + lookup behind
-  `/api/pregen`; demo impl. *Files:* `src/lib/adapters/pregen.ts`, `api/pregen/route.ts`.
+  `/api/pregen`. *Files:* `src/lib/adapters/pregen.ts`, `api/pregen/route.ts`.
 - [ ] **A2 — Sender login/balance** in real mode. *Files:* `src/components/WalletProvider.tsx`.
 - [x] **A3 — Claim OTP login + "claim your wallet" UI.** *Files:* `src/components/ClaimScreen.tsx`.
 
@@ -83,7 +81,7 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 
 ### Track C — Aggregation (CCTP)
 - [x] **C1 — Bridge adapter** 🔑(`CCTP_PRIVATE_KEY` for live): `bridge-kit`, bridge **Σ once**
-  (Base Sepolia → Arc, forwarder); demo sim. *Files:* `src/lib/adapters/bridge.ts`;
+  (Base Sepolia → Arc, forwarder). *Files:* `src/lib/adapters/bridge.ts`;
   add CCTP addrs + chain ids to `src/lib/adapters/arc.ts`.
 - [x] **C2 — Wire bridge into engine:** bridge before shield, await mint, keep gas buffer.
   *Files:* `src/lib/engine/aggregate.ts`, `src/lib/engine/shield.ts`.
@@ -99,14 +97,14 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
   on-chain USDC→EURC; confirm one live swap. *Files:* `src/lib/adapters/swap.ts`. Only if we
   want a live FX leg on top of direct delivery.
 
-### Track E — Engine orchestration 🔥 — uses demo adapters; not blocked on A–D real code
+### Track E — Engine orchestration 🔥 — develops against the adapter interfaces; not blocked on A–D landing
 - [x] **E1 — `runSend` batch loop:** loop resolve→pregen over `recipients[]`; bridge + shield
   Σ; fan-out N transfers; emit N claim links. *Files:* `src/lib/engine/index.ts` 🔥.
 - [x] **E2 — `runClaim`:** payout = pregen address (drop `recipientAddressFromSecret`);
   relabel claim steps as relayer-submitted. *Files:* `src/lib/engine/claim.ts` 🔥.
 - [x] **E3 — `resolve.ts`:** email/phone → pregen path. *Files:* `src/lib/engine/resolve.ts`.
 
-### Track F — UI / Surfaces — uses demo engine
+### Track F — UI / Surfaces — develops against the engine interface
 - [x] **F1 — Send screen → `recipients[]`** (single + add-row). *Files:* `src/app/page.tsx`.
 - [x] **F2 — Batch screen:** paste rows → N links + status table; payees isolated.
   *Files:* `src/app/batch/page.tsx`.
@@ -117,10 +115,10 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 ---
 
 ## Wave 2 — Integration & live tests (after tracks land; coordinate)
-- [ ] **I1 — Flip demo→real** with keys; live checks: faucet per-call cap, CCTP bridge
+- [ ] **I1 — Wire keys**; live checks: faucet per-call cap, CCTP bridge
   Base Sepolia → Arc, EURC delivery to EU recipient (+ optional Swap USDC→EURC if wired).
 - [ ] **I2 — Full batch run** (5 recipients) end-to-end on testnet.
-- [ ] **I3 — Demo script + honesty labels + polish.**
+- [ ] **I3 — Walkthrough + honesty labels + polish.**
 
 ---
 
@@ -142,5 +140,5 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 admin key (dashboard.unlink.xyz), a funded Base Sepolia wallet for CCTP, and (optional) a free
 Circle kit key for the Swap stretch.
 
-**Demo-stays-green rule:** every real adapter falls back to its demo/sim impl when its key
-is absent. `npm run build` must pass before each commit.
+**Real-only rule:** when a key/credential is absent the adapter surfaces an honest error (no
+silent simulation). `npm run build` must pass before each commit.

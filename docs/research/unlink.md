@@ -231,7 +231,8 @@ that the implementation in `src/lib/adapters/unlink.ts` trusts over the notes:
   needs a server-only `UNLINK_API_KEY` + a backend — it cannot run in the
   browser. `@unlink-xyz/sdk/admin` sets `"browser": null` in its exports.
   Slip's real path is therefore server-only and guarded with a `typeof window`
-  check; demo mode (no key) simulates all three legs deterministically.
+  check; all three legs run against the real Unlink SDK, and a missing admin key
+  is a hard blocker (an honest error) — there is no simulated fallback.
 - **`transfer` params** confirmed: single `{ token, amount, recipientAddress }`
   or batch `{ token, transfers: [{ recipientAddress, amount }] }` (the two are a
   discriminated union — `amount`/`recipientAddress` are `never` in batch form).

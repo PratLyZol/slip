@@ -54,7 +54,9 @@ Three sponsor SDKs, max — no LI.FI, no Privy, no ENS SDK, no database.
 
 ## Run it
 
-Works **credential-free in demo mode** — zero keys required.
+Slip runs against **real testnet integrations**, so it needs the relevant keys: a
+Dynamic environment id + token, an Unlink admin key, and a Base Sepolia wallet funded
+for CCTP.
 
 ```bash
 npm install
@@ -67,16 +69,16 @@ Headless engine smoke test (send → claim → FX → batch → ENS):
 npm run smoke
 ```
 
-### Real mode (optional)
+### Configuration
 
-Copy `.env.example` to `.env.local` and fill in keys. With **none** set, the app runs
-fully in deterministic demo mode. Real adapters activate when their keys are present:
+Copy `.env.example` to `.env.local` and fill in keys. Every integration is real and
+activates from its own env key. If a key is missing, that adapter surfaces an honest
+error rather than simulating a result:
 
-- `NEXT_PUBLIC_DYNAMIC_ENV_ID` — turns on the real Dynamic wallet provider (and turns
-  demo mode off unless `NEXT_PUBLIC_DEMO_MODE=true`).
-- `UNLINK_API_KEY` — server-only admin key for the real Unlink shielded path.
+- `NEXT_PUBLIC_DYNAMIC_ENV_ID` — enables the Dynamic wallet provider and pregen.
+- `UNLINK_API_KEY` — server-only admin key for the Unlink shielded path.
 
-The privacy guarantee and the seven-step shape are identical in demo and real mode.
+The privacy guarantee and the seven-step shape hold on the real testnet path.
 
 ## What's real vs simulated
 
@@ -86,9 +88,9 @@ Honest accounting — Slip is a proof of concept, not a protocol.
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Seven-step engine            | **Real** — runs end-to-end; deterministic simulation when no chain creds.                                              |
 | Claim links (stateless)      | **Real** — `/claim#<base64url(payload)>`; the secret rides the URL fragment, never a server.                          |
-| ENS resolution (`.eth`)      | **Real** — viem public-resolver read on Ethereum mainnet, with graceful fallback to a demo address on RPC failure.    |
-| Unlink shielded path         | **Wired + degradable** — real `@unlink-xyz/sdk/client` against `arc-testnet` behind a server-only key; demo simulates the shield/transfer/unshield legs deterministically. |
-| Arc StableFX (USDC→EURC)     | **Stubbed pending a Circle key** — StableFX is not permissionless; demo simulates the RFQ quote + settle at a realistic EUR/USD rate. |
+| ENS resolution (`.eth`)      | **Real** — viem public-resolver read on Ethereum mainnet, with graceful fallback on RPC failure.    |
+| Unlink shielded path         | **Real** — `@unlink-xyz/sdk/client` against `arc-testnet` behind a server-only key, running the shield/transfer/unshield legs. |
+| Local currency at claim      | **Real** — direct destination-token choice (EU → EURC, else USDC). No swap, no FX key; EURC is faucet-fundable. StableFX is dropped. |
 | Paymaster / gas sponsorship  | **Simulated** — no canonical ERC-4337 EntryPoint is published on Arc; per PRD §8 a funded relayer would cover gas. Labeled honestly.    |
 | Counterfactual account       | **Real derivation** — secret → deterministic account address (viem). A true 4337 CREATE2 `initCode` is a drop-in later. |
 | Batch payout                 | **Real** — engine per row, independent isolated claim links, client-side CSV export. State is React + localStorage, no DB. |
@@ -96,7 +98,7 @@ Honest accounting — Slip is a proof of concept, not a protocol.
 Simulated transactions use real Arc-style hashes pointing at the real ArcScan host —
 they will **404** on the live explorer. The `/private` view labels this explicitly.
 
-## Demo script (2 min)
+## Walkthrough (2 min)
 
 1. **It just works.** Name + amount + Send → "Sent." Second device taps the link →
    money's there, in their currency.

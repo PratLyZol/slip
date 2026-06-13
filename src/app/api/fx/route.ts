@@ -16,13 +16,12 @@
  */
 
 import { isDemoMode } from "../../../lib/config";
-import { quoteAndSettle } from "../../../lib/adapters/fx-stablefx";
-import { recipientAddressFromSecret } from "../../../lib/engine/counterfactual";
+import { swapUsdcToEurc } from "../../../lib/adapters/swap";
 import { localTokenForRegion } from "../../../lib/engine/fx";
 import type { Region } from "../../../lib/engine/types";
 import type { Hex } from "viem";
 
-// StableFX settles a live trade — always run at request time, never cached.
+// A live swap — always run at request time, never cached.
 export const dynamic = "force-dynamic";
 
 interface FxRequestBody {
@@ -68,30 +67,35 @@ export async function POST(request: Request): Promise<Response> {
 
   const token = localTokenForRegion(region);
 
-  // US / USDC: genuine no-op — no StableFX trade at all.
+  // US / USDC: genuine no-op — no swap at all.
   if (token === "USDC") {
     return Response.json({ ok: true, token, amount: amountUsdc, rate: 1 });
   }
 
-  // EU / EURC: run the real StableFX taker flow, settling EURC to the recipient.
+  // EU / EURC: swap USDC → EURC via Circle Swap Kit, signed by the recipient's
+  // claim account. If there's no route on Arc testnet (the expected case — LiFi
+  // has no USDC↔EURC pool there), deliver USDC honestly instead of faking EURC.
   try {
-    const recipientEvmAddress = recipientAddressFromSecret(secret);
-    const result = await quoteAndSettle({
-      amountUsdc,
-      recipientEvmAddress,
-      secret,
-    });
+    const result = await swapUsdcToEurc(amountUsdc, secret);
+    if (!result.routed) {
+      return Response.json({
+        ok: true,
+        token: "USDC",
+        amount: result.amount,
+        rate: 1,
+        note: result.note,
+      });
+    }
     return Response.json({
       ok: true,
-      token,
-      amount: result.eurcAmount,
+      token: "EURC",
+      amount: result.amount,
       rate: result.rate,
       txHash: result.txHash,
-      status: result.status,
       note: result.note,
     });
   } catch (err) {
-    const error = err instanceof Error ? err.message : "StableFX flow failed.";
+    const error = err instanceof Error ? err.message : "Swap failed.";
     return Response.json({ ok: false, error }, { status: 502 });
   }
 }
