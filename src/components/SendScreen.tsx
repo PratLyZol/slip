@@ -99,7 +99,7 @@ export default function SendScreen() {
       <div className="rise relative mt-2 flex flex-col items-center pt-7">
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 top-0 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.07] blur-3xl"
+          className="pointer-events-none absolute left-1/2 top-0 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.06] blur-3xl"
         />
         <label className="kicker">You send</label>
         <div className="mt-4 flex items-baseline gap-1">
@@ -113,7 +113,7 @@ export default function SendScreen() {
               if ((v.match(/\./g)?.length ?? 0) <= 1) setAmount(v);
             }}
             disabled={phase === "running"}
-            className="amount-figure w-[clamp(2ch,60vw,7ch)] bg-transparent text-center text-[68px] font-medium leading-none text-text caret-[var(--volt)] outline-none placeholder:text-ink-700 disabled:opacity-60"
+            className="amount-figure w-[clamp(2ch,60vw,7ch)] bg-transparent text-center text-[68px] font-medium leading-none text-text caret-[var(--volt)] outline-none placeholder:text-ink-600 disabled:opacity-60"
             aria-label="Amount in USD"
           />
         </div>
@@ -152,7 +152,7 @@ export default function SendScreen() {
               aria-pressed={region === r}
               className={`flex-1 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all disabled:opacity-60 ${
                 region === r
-                  ? "bg-ink-700 text-text shadow-[0_1px_0_#ffffff14_inset]"
+                  ? "bg-ink-700 text-text shadow-[0_1px_0_#f5efe01f_inset]"
                   : "text-text-faint hover:text-text-dim"
               }`}
             >

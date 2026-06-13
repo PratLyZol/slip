@@ -1,30 +1,37 @@
 @import "tailwindcss";
 
 /*
-  Slip — "private ledger". Dark, confident, consumer-fintech.
-  One hot accent (voltage lime) against near-black ink; a single cool
-  counter-accent (mint) reserved exclusively for the privacy story.
-  Display: Bricolage Grotesque. Figures + hashes: Spline Sans Mono.
+  Slip — "midnight ledger". A payment slip, printed at night.
+  Warm-black surfaces, paper-white ink, banknote green for money moments, and
+  an official-stamp blue reserved for the privacy story. Figures and hashes in
+  mono like a printed receipt; hero statements in a serif. The one inversion:
+  the privacy proof renders as a PAPER document with black redaction bars —
+  a physical exhibit sitting inside the dark app.
+
+  NOTE: surface tokens keep their legacy ink-* names (950 = page … 600 =
+  strongest chip) so the component layer never needed a rename.
 */
 
 :root {
-  --ink-950: #060708;
-  --ink-900: #0a0c0e;
-  --ink-850: #0f1215;
-  --ink-800: #151a1e;
-  --ink-700: #1e242a;
-  --ink-600: #2a323a;
-  --hair: #ffffff12;
-  --hair-strong: #ffffff22;
+  --ink-950: #0c0b08; /* page — warm black */
+  --ink-900: #14120e; /* card */
+  --ink-850: #1b1914; /* elevated / inputs */
+  --ink-800: #24211a; /* chips, wells */
+  --ink-700: #302c23;
+  --ink-600: #403b2f;
+  --hair: #f5efe017;
+  --hair-strong: #f5efe02e;
 
-  --text: #f2f5f3;
-  --text-dim: #98a29b;
-  --text-faint: #5c6660;
+  --text: #f1ecdf;
+  --text-dim: #a59e8c;
+  --text-faint: #685f4d;
 
-  --volt: #cdf24a; /* primary accent */
-  --volt-deep: #a3d11f;
-  --cool: #5ee0c8; /* privacy counter-accent */
-  --danger: #ff6b6b;
+  --volt: #34c573; /* banknote green, luminous for dark */
+  --volt-deep: #1d8a4e;
+  --cool: #8da2ff; /* stamp blue, lifted for dark */
+  --paper: #f3eee0; /* the physical document */
+  --redact: #16130a; /* redaction ink on the document */
+  --danger: #ff7a64;
 
   --background: var(--ink-950);
   --foreground: var(--text);
@@ -48,9 +55,11 @@
   --color-volt: var(--volt);
   --color-volt-deep: var(--volt-deep);
   --color-cool: var(--cool);
+  --color-paper: var(--paper);
+  --color-redact: var(--redact);
   --color-danger: var(--danger);
 
-  --font-sans: var(--font-display);
+  --font-sans: var(--font-body);
   --font-mono: var(--font-figures);
 }
 
@@ -61,76 +70,163 @@ body {
 }
 
 body {
-  font-family: var(--font-display), system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "ss01" on;
 }
 
 /* ---- Atmosphere ------------------------------------------------------- */
 
-/* App canvas: vignette + a faint volt aurora high above the fold. */
+/* Page: warm black with a faint green aurora high above the fold. */
 .app-canvas {
   background:
     radial-gradient(
-      90% 50% at 50% -18%,
-      color-mix(in oklab, var(--volt) 9%, transparent) 0%,
+      90% 45% at 50% -15%,
+      color-mix(in oklab, var(--volt) 7%, transparent) 0%,
       transparent 60%
     ),
-    radial-gradient(120% 80% at 50% -10%, #12161a 0%, var(--ink-950) 55%),
+    radial-gradient(120% 80% at 50% -10%, #171510 0%, var(--ink-950) 55%),
     var(--ink-950);
 }
 
-/* Film grain over everything — sells the "printed ledger" texture. */
+/* Paper fibre — barely there, lightening like dust on a dark desk. */
 .grain::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 50;
   pointer-events: none;
-  opacity: 0.05;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Card recipe: layered surface + gradient hairline that catches the light. */
+/* Card: charcoal stock, hairline, lit from the top edge. */
 .card {
   position: relative;
-  border-radius: 1.25rem;
+  border-radius: 1rem;
   border: 1px solid var(--hair);
   background:
-    linear-gradient(180deg, #ffffff07 0%, transparent 38%),
+    linear-gradient(180deg, #f5efe008 0%, transparent 40%),
     var(--ink-900);
+  box-shadow: 0 12px 32px -16px #000000b3;
 }
 .card-pop {
   box-shadow:
-    0 1px 0 #ffffff0a inset,
-    0 24px 48px -24px #000000cc;
+    0 1px 0 #f5efe00d inset,
+    0 24px 56px -24px #000000e6;
 }
 
-/* Privacy surfaces glow cool, never volt. */
+/* The privacy document: PAPER, inverted against the dark app. */
 .card-shielded {
-  border-color: color-mix(in oklab, var(--cool) 28%, transparent);
+  border-radius: 1rem;
+  border: 1px solid #f3eee0;
   background:
+    radial-gradient(110% 70% at 50% -10%, #fffdf4 0%, transparent 55%),
+    var(--paper);
+  color: var(--redact);
+  box-shadow: 0 24px 56px -20px #00000080;
+}
+
+/* ---- Ticket (the claim slip) ------------------------------------------ */
+
+/* Perforated bottom edge — punched semicircles, like a tear-off stub. */
+.ticket {
+  --perf: 6px;
+  position: relative;
+  border: 1px solid var(--hair-strong);
+  border-radius: 1rem 1rem 0 0;
+  background:
+    linear-gradient(180deg, #f5efe008 0%, transparent 40%),
+    var(--ink-850);
+  box-shadow: 0 24px 56px -24px #000000e6;
+  mask-image:
+    linear-gradient(black, black),
     radial-gradient(
-      120% 120% at 50% 0%,
-      color-mix(in oklab, var(--cool) 8%, transparent) 0%,
-      transparent 60%
-    ),
-    var(--ink-900);
+      circle at 50% 100%,
+      transparent calc(var(--perf) - 0.5px),
+      black var(--perf)
+    );
+  mask-size:
+    100% calc(100% - var(--perf)),
+    calc(var(--perf) * 3.2) calc(var(--perf) * 2);
+  mask-position:
+    top left,
+    bottom left;
+  mask-repeat: no-repeat, repeat-x;
+  mask-composite: add;
+}
+
+/* Dashed tear line with side notches, for inside the ticket. */
+.ticket-rule {
+  position: relative;
+  height: 0;
+  border-top: 1.5px dashed var(--hair-strong);
+  margin-inline: -1.25rem;
+}
+.ticket-rule::before,
+.ticket-rule::after {
+  content: "";
+  position: absolute;
+  top: -7px;
+  height: 14px;
+  width: 14px;
+  border-radius: 9999px;
+  background: var(--ink-950);
+  border: 1px solid var(--hair);
+}
+.ticket-rule::before {
+  left: -8px;
+}
+.ticket-rule::after {
+  right: -8px;
+}
+
+/* ---- Redaction -------------------------------------------------------- */
+
+/* A black bar where a fact used to be (lives on the paper document). */
+.redact-bar {
+  display: inline-block;
+  height: 0.9em;
+  border-radius: 2px;
+  background: var(--redact);
+  vertical-align: baseline;
+}
+
+/* Rubber stamp — for "UNREADABLE" / "REDACTED" moments. */
+.stamp {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  transform: rotate(-4deg);
+  opacity: 0.9;
 }
 
 /* ---- Type ------------------------------------------------------------- */
 
-/* Big money: mono, tabular, tight — reads like a terminal ledger. */
+/* Receipt figures: mono, tabular, tight. */
 .amount-figure {
   font-family: var(--font-figures), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.045em;
 }
 
+/* UI display: the grotesque, tightened. */
 .display {
-  font-family: var(--font-display), system-ui, sans-serif;
-  letter-spacing: -0.02em;
+  font-family: var(--font-body), system-ui, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+/* Editorial serif — hero statements only. */
+.serif {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 .hash {
@@ -142,7 +238,7 @@ body {
 
 .kicker {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--text-faint);
@@ -151,29 +247,35 @@ body {
 /* ---- Interaction ------------------------------------------------------ */
 
 .focus-volt:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--volt) 70%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--volt) 60%, transparent);
   outline-offset: 2px;
 }
 
-/* Primary CTA: volt slab with a hot edge + press feedback. */
+/* Primary CTA: banknote-green slab, ink text, real press depth. */
 .btn-volt {
-  background: linear-gradient(180deg, var(--volt) 0%, var(--volt-deep) 130%);
-  color: var(--ink-950);
+  background: linear-gradient(180deg, var(--volt) 0%, var(--volt-deep) 150%);
+  color: #07130b;
   box-shadow:
-    0 1px 0 #ffffff66 inset,
-    0 12px 32px -12px color-mix(in oklab, var(--volt) 55%, transparent);
+    0 1px 0 #ffffff42 inset,
+    0 2px 0 var(--volt-deep),
+    0 12px 28px -10px color-mix(in oklab, var(--volt) 45%, transparent);
   transition:
     transform 0.12s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.2s ease,
+    box-shadow 0.15s ease,
     opacity 0.2s ease;
 }
 .btn-volt:not(:disabled):hover {
   box-shadow:
-    0 1px 0 #ffffff77 inset,
-    0 16px 44px -12px color-mix(in oklab, var(--volt) 70%, transparent);
+    0 1px 0 #ffffff52 inset,
+    0 2px 0 var(--volt-deep),
+    0 16px 36px -10px color-mix(in oklab, var(--volt) 60%, transparent);
 }
 .btn-volt:not(:disabled):active {
-  transform: translateY(1px) scale(0.99);
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #ffffff42 inset,
+    0 0 0 var(--volt-deep),
+    0 6px 16px -8px color-mix(in oklab, var(--volt) 40%, transparent);
 }
 
 /* ---- Motion ----------------------------------------------------------- */
@@ -205,7 +307,6 @@ body {
   animation: slip-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Staggered page load: tag siblings with .rise and they cascade in. */
 .rise {
   animation: slip-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -225,7 +326,7 @@ body {
   animation-delay: 0.3s;
 }
 
-/* Shield shimmer for the private leg — a slow scan of cool light. */
+/* A slow light scan across the shielded document. */
 @keyframes slip-scan {
   from {
     transform: translateX(-100%);
@@ -242,13 +343,14 @@ body {
   content: "";
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background: linear-gradient(
     100deg,
     transparent 30%,
-    color-mix(in oklab, var(--cool) 10%, transparent) 50%,
+    #16130a0d 50%,
     transparent 70%
   );
-  animation: slip-scan 3.2s ease-in-out infinite;
+  animation: slip-scan 3.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -119,9 +119,7 @@ function EmptyState({ busy, onRun }: { busy: boolean; onRun: () => void }) {
           />
         </svg>
       </span>
-      <h1 className="mt-4 text-[22px] font-semibold tracking-tight">
-        Send something first
-      </h1>
+      <h1 className="serif mt-4 text-[26px]">Send something first</h1>
       <p className="mt-2 max-w-[300px] text-[14px] leading-snug text-text-dim">
         This view proves a real send is unreadable on-chain. Run a quick demo
         send and we&apos;ll show you what the explorer can — and can&apos;t — see.
@@ -155,12 +153,10 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
   return (
     <div className="flex flex-1 flex-col">
       <header className="rise pb-5 pt-2">
-        <span className="rounded-full border border-cool/30 bg-cool/[0.07] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-cool">
+        <span className="rounded-full border border-cool/30 bg-cool/[0.06] px-3 py-1 text-[10.5px] font-bold uppercase tracking-[0.14em] text-cool">
           On-chain proof
         </span>
-        <h1 className="display mt-3 text-[26px] font-semibold">
-          You can&apos;t read it
-        </h1>
+        <h1 className="serif mt-3 text-[32px]">You can&apos;t read it</h1>
         <p className="mt-2 text-[14px] leading-snug text-text-dim">
           This is a real {amount} send. The money goes in one public door and
           out another — but the middle, where the amount and the
@@ -214,7 +210,7 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
       )}
 
       {/* The builder line */}
-      <p className="display mt-6 text-center text-[17px] font-semibold text-text">
+      <p className="serif mt-6 text-center text-[20px] italic text-text">
         “Even the builder can&apos;t read this.”
       </p>
 
@@ -269,7 +265,7 @@ function EdgeCard({
       <p className="mt-1 text-[12.5px] leading-snug text-text-dim">{body}</p>
 
       {txHash ? (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[var(--hair)] bg-ink-950/60 px-3 py-2">
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[var(--hair)] bg-ink-900 px-3 py-2">
           <span className="hash truncate text-text-dim">
             {shortAddress(txHash)}
           </span>
@@ -307,48 +303,41 @@ function PrivateMiddle({ proofRef }: { proofRef?: string }) {
     "which token moved",
   ];
   return (
-    <div className="card-shielded shield-scan rise relative overflow-hidden rounded-[1.25rem] border p-4">
+    <div className="card-shielded shield-scan rise relative overflow-hidden p-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-cool">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#16130a]/60">
           ② Private transfer — shielded
         </span>
-        <span className="rounded-full border border-cool/40 bg-cool/10 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-cool">
-          unreadable
-        </span>
+        <span className="stamp text-[#b3382a]">Unreadable</span>
       </div>
 
-      <h3 className="display mt-2 text-[21px] font-bold leading-tight text-text">
+      <h3 className="serif mt-3 text-[24px] leading-tight text-[#16130a]">
         Nothing readable here.
       </h3>
-      <p className="mt-1 text-[12.5px] leading-snug text-text-dim">
+      <p className="mt-1.5 text-[12.5px] leading-snug text-[#16130a]/70">
         On-chain, this leg is a zero-knowledge proof submission. There&apos;s no
         ordinary transaction to open — only opaque proof bytes:
       </p>
 
-      <div className="hash mt-3 rounded-xl border border-cool/15 bg-ink-950/70 px-3 py-2 leading-relaxed text-text-faint">
+      <div className="hash mt-3 rounded-lg border border-[#16130a]/15 bg-[#16130a]/[0.05] px-3 py-2 leading-relaxed text-[#16130a]/55">
         {proofRef ?? "proof unavailable"}
       </div>
 
-      <p className="mt-3 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-text-faint">
+      <p className="mt-4 text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#16130a]/60">
         What an observer can NOT see
       </p>
-      <ul className="mt-1.5 flex flex-col gap-1">
-        {CANNOT_SEE.map((item) => (
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {CANNOT_SEE.map((item, i) => (
           <li
             key={item}
-            className="flex items-center gap-2 text-[12.5px] text-text-dim"
+            className="flex items-center justify-between gap-3 text-[12.5px] text-[#16130a]/85"
           >
-            <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-danger/40 text-danger">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M6 6l12 12M18 6 6 18"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </span>
             {item}
+            <span
+              aria-hidden
+              className="redact-bar"
+              style={{ width: `${30 + ((i * 17) % 36)}%` }}
+            />
           </li>
         ))}
       </ul>
@@ -360,7 +349,7 @@ function Comparison({ amount }: { amount: string }) {
   return (
     <div className="mt-5 grid grid-cols-2 gap-2">
       <div className="card p-3.5">
-        <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-text-faint">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-text-faint">
           A normal transfer shows
         </p>
         <ul className="hash mt-2 flex flex-col gap-1 text-[11.5px] text-text-dim">
@@ -369,14 +358,20 @@ function Comparison({ amount }: { amount: string }) {
           <li className="font-semibold text-danger">{amount}</li>
         </ul>
       </div>
-      <div className="card-shielded rounded-[1.25rem] border p-3.5">
-        <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-cool">
+      <div className="card-shielded p-3.5">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#16130a]/60">
           Slip shows
         </p>
-        <ul className="mt-2 flex flex-col gap-1 text-[12px] text-text-dim">
-          <li>a deposit happened</li>
-          <li>a withdraw happened</li>
-          <li className="font-semibold text-text">no link between them</li>
+        <ul className="hash mt-2 flex flex-col gap-1 text-[11.5px] text-[#16130a]/80">
+          <li>
+            from: <span aria-hidden className="redact-bar w-[55%]" />
+          </li>
+          <li>
+            to: <span aria-hidden className="redact-bar w-[60%]" />
+          </li>
+          <li>
+            amount: <span aria-hidden className="redact-bar w-[40%]" />
+          </li>
         </ul>
       </div>
     </div>

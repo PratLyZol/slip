@@ -43,7 +43,7 @@ export default function SuccessCard({ result, recipient, onSendAnother }: Props)
 
   return (
     <div className="flex flex-col items-center text-center">
-      <span className="rise relative mt-2 grid h-16 w-16 place-items-center rounded-full bg-volt text-ink-950 shadow-[0_0_48px_-8px_var(--volt)]">
+      <span className="rise relative mt-2 grid h-16 w-16 place-items-center rounded-full bg-volt text-[#07130b] shadow-[0_10px_28px_-10px_var(--volt)]">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
           <path
             d="m5 12.5 4.5 4.5L19 7"
@@ -55,33 +55,40 @@ export default function SuccessCard({ result, recipient, onSendAnother }: Props)
         </svg>
       </span>
 
-      <h2 className="rise display mt-5 text-[28px] font-semibold">
-        Sent <span className="amount-figure">{amount}</span>
+      <h2 className="serif rise mt-5 text-[32px]">
+        Sent <span className="amount-figure text-[28px]">{amount}</span>
       </h2>
       <p className="rise mt-1 text-[15px] text-text-dim">
         to <span className="font-semibold text-text">{recipient}</span>
       </p>
 
-      <div className="card card-pop rise mt-7 w-full p-5">
-        <p className="kicker text-left">Their claim link</p>
+      <div className="ticket rise mt-7 w-full px-5 pb-7 pt-5">
+        <div className="flex items-baseline justify-between">
+          <p className="kicker text-left">Claim slip</p>
+          <p className="hash text-text-faint">nº {result.secret.slice(2, 8)}</p>
+        </div>
 
         <div className="mt-4 grid place-items-center">
           {claimUrl ? (
-            <div className="rounded-2xl bg-white p-3.5 shadow-[0_0_0_1px_var(--hair-strong),0_16px_48px_-16px_#000c]">
+            <div className="rounded-xl border border-[var(--hair)] bg-white p-3.5 shadow-[0_8px_24px_-12px_#000c]">
               <QRCode
                 value={claimUrl}
                 size={168}
                 bgColor="#ffffff"
-                fgColor="#060708"
+                fgColor="#16130a"
                 level="M"
               />
             </div>
           ) : (
-            <div className="h-[192px] w-[192px] animate-slip-pulse rounded-2xl bg-ink-700" />
+            <div className="h-[192px] w-[192px] animate-slip-pulse rounded-xl bg-ink-800" />
           )}
         </div>
 
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-950/60 p-2 pl-3">
+        <div className="mt-5">
+          <div className="ticket-rule" />
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-900 p-2 pl-3">
           <span className="hash flex-1 truncate text-left text-[12px] text-text-dim">
             {claimUrl || "preparing link…"}
           </span>

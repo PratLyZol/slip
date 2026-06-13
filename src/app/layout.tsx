@@ -1,12 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Spline_Sans_Mono } from "next/font/google";
+import {
+  Instrument_Serif,
+  Schibsted_Grotesk,
+  Spline_Sans_Mono,
+} from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import WalletProvider from "@/components/WalletProvider";
 import AppShell from "@/components/AppShell";
 
-const display = Bricolage_Grotesque({
+const serif = Instrument_Serif({
   variable: "--font-display",
+  weight: "400",
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+});
+
+const body = Schibsted_Grotesk({
+  variable: "--font-body",
   subsets: ["latin"],
 });
 
@@ -22,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07080a",
+  themeColor: "#0c0b08",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -36,7 +47,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${display.variable} ${figures.variable} h-full antialiased`}
+      className={`${serif.variable} ${body.variable} ${figures.variable} h-full antialiased`}
     >
       <body className="app-canvas grain min-h-dvh text-text">
         <Providers>

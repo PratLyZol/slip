@@ -22,17 +22,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col">
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[var(--hair)] bg-[var(--ink-950)]/80 px-5 py-3.5 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[var(--hair)] bg-[var(--ink-950)]/85 px-5 py-3 backdrop-blur-xl">
         <Link href="/" className="flex items-center gap-2">
           <Wordmark />
         </Link>
         <WalletPill />
       </header>
 
-      <main className="flex flex-1 flex-col px-5 pb-28 pt-4">{children}</main>
+      <main className="flex flex-1 flex-col px-5 pb-32 pt-4">{children}</main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[440px] border-t border-[var(--hair)] bg-[var(--ink-900)]/90 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
-        <ul className="flex items-stretch justify-between">
+      <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[440px] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <ul className="card card-pop flex items-stretch justify-between rounded-2xl px-2 py-1.5">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active =
               href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -40,20 +40,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <li key={href} className="flex-1">
                 <Link
                   href={href}
-                  className={`relative flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition-colors ${
+                  className={`relative flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10.5px] font-bold transition-colors ${
                     active
-                      ? "text-volt"
+                      ? "text-text"
                       : "text-text-faint hover:text-text-dim"
                   }`}
                 >
-                  {active && (
-                    <span
-                      aria-hidden
-                      className="absolute -top-2 h-0.5 w-7 rounded-full bg-volt shadow-[0_0_8px_var(--volt)]"
-                    />
-                  )}
                   <Icon active={active} />
                   {label}
+                  <span
+                    aria-hidden
+                    className={`mt-0.5 h-1 w-1 rounded-full transition-colors ${
+                      active ? "bg-volt" : "bg-transparent"
+                    }`}
+                  />
                 </Link>
               </li>
             );
@@ -66,8 +66,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
 function Wordmark() {
   return (
-    <span className="flex items-center gap-2">
-      <span className="grid h-7 w-7 place-items-center rounded-lg bg-volt text-ink-950 shadow-[0_0_20px_-4px_var(--volt)]">
+    <span className="flex items-baseline gap-2">
+      <span className="grid h-7 w-7 translate-y-1 place-items-center rounded-lg bg-paper text-redact">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
           <path
             d="M5 14.5 11 6l2 6 6-2-8 8.5L9 12z"
@@ -75,7 +75,7 @@ function Wordmark() {
           />
         </svg>
       </span>
-      <span className="display text-[18px] font-bold">Slip</span>
+      <span className="serif text-[22px] italic">Slip</span>
     </span>
   );
 }

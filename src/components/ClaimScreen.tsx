@@ -118,9 +118,9 @@ export default function ClaimScreen() {
     <div className="flex flex-1 flex-col items-center pt-6 text-center">
       <div
         aria-hidden
-        className="pointer-events-none absolute left-1/2 top-14 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.08] blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-14 h-44 w-72 -translate-x-1/2 rounded-full bg-volt/[0.06] blur-3xl"
       />
-      <span className="kicker rise">
+      <span className="serif rise text-[22px] italic text-text-dim">
         {payload.senderName
           ? `${payload.senderName} sent you`
           : "Someone sent you"}
@@ -188,7 +188,7 @@ function SuccessState({
 
   return (
     <div className="flex flex-1 flex-col items-center pt-6 text-center">
-      <span className="rise grid h-16 w-16 place-items-center rounded-full bg-volt text-ink-950 shadow-[0_0_48px_-8px_var(--volt)]">
+      <span className="rise grid h-16 w-16 place-items-center rounded-full bg-volt text-[#07130b] shadow-[0_10px_28px_-10px_var(--volt)]">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
           <path
             d="m5 12.5 4.5 4.5L19 7"
@@ -200,7 +200,7 @@ function SuccessState({
         </svg>
       </span>
 
-      <h1 className="display rise mt-5 text-[26px] font-semibold">
+      <h1 className="serif rise mt-5 text-[30px]">
         {alreadyClaimed ? "Already claimed" : "You received"}
       </h1>
       <p className="amount-figure rise mt-2 text-[44px] font-medium leading-none">
@@ -252,7 +252,7 @@ function ErrorState({ message }: { message: string }) {
           />
         </svg>
       </span>
-      <h1 className="mt-4 text-[20px] font-semibold">Can&apos;t open this slip</h1>
+      <h1 className="serif mt-4 text-[24px]">Can&apos;t open this slip</h1>
       <p className="mt-2 max-w-[280px] text-[14px] text-text-dim">{message}</p>
     </div>
   );

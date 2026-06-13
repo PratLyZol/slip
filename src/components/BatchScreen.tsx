@@ -149,12 +149,10 @@ export default function BatchScreen() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="rise pb-5 pt-2">
-        <span className="rounded-full border border-volt/25 bg-volt/[0.06] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-volt">
+        <span className="rounded-full border border-volt/30 bg-volt/[0.06] px-3 py-1 text-[10.5px] font-bold uppercase tracking-[0.14em] text-volt">
           Batch payout
         </span>
-        <h1 className="display mt-3 text-[26px] font-semibold">
-          Pay a whole list
-        </h1>
+        <h1 className="serif mt-3 text-[32px]">Pay a whole list</h1>
         <p className="mt-2 text-[14px] leading-snug text-text-dim">
           Paste names and amounts. Each row runs the same engine — independent,
           isolated claim links. Payees never see each other; your treasury is
@@ -411,7 +409,7 @@ function BatchRowCard({ row }: { row: TableRow }) {
 
       {row.status === "ready" && row.claimUrl && (
         <>
-          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-950/60 p-1.5 pl-3">
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-[var(--hair)] bg-ink-900 p-1.5 pl-3">
             <span className="flex-1 hash truncate text-text-dim">
               {row.claimUrl}
             </span>

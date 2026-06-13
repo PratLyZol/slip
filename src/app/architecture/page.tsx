@@ -3,13 +3,11 @@ import EngineSteps from "@/components/EngineSteps";
 export default function ArchitecturePage() {
   return (
     <div className="flex flex-1 flex-col">
-      <header className="pb-6 pt-2">
-        <span className="rounded-full border border-[var(--hair)] bg-ink-850 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-text-faint">
+      <header className="rise pb-6 pt-2">
+        <span className="rounded-full border border-[var(--hair)] bg-ink-850 px-3 py-1 text-[10.5px] font-bold uppercase tracking-[0.14em] text-text-faint">
           One engine
         </span>
-        <h1 className="mt-3 text-[24px] font-semibold tracking-tight">
-          Seven steps, one tap
-        </h1>
+        <h1 className="serif mt-3 text-[32px]">Seven steps, one tap</h1>
         <p className="mt-2 text-[14px] leading-snug text-text-dim">
           The sender types a name and an amount. Everything below happens so the
           recipient never makes a wallet, holds gas, or learns what a chain is.
@@ -18,8 +16,8 @@ export default function ArchitecturePage() {
       </header>
 
       {/* The privacy claim — the bounty, stated once and clearly. */}
-      <div className="mb-5 rounded-2xl border border-volt/40 bg-volt/[0.06] p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-volt">
+      <div className="card rise mb-5 border-volt/30 bg-volt/[0.05] p-4">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-volt">
           The privacy claim
         </p>
         <p className="mt-1.5 text-[13.5px] leading-snug text-text-dim">
@@ -30,13 +28,13 @@ export default function ArchitecturePage() {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-[var(--hair)] bg-ink-900/60 p-5">
+      <div className="card rise p-5">
         <EngineSteps showcase />
       </div>
 
       {/* The FX-at-claim decision. */}
-      <div className="mt-4 rounded-2xl border border-[var(--hair)] bg-ink-900/60 p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-cool">
+      <div className="card rise mt-4 p-4">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-cool">
           FX at claim time
         </p>
         <p className="mt-1.5 text-[13.5px] leading-snug text-text-dim">
@@ -48,8 +46,8 @@ export default function ArchitecturePage() {
       </div>
 
       {/* Sponsor legend. */}
-      <div className="mt-4 rounded-2xl border border-[var(--hair)] bg-ink-900/60 p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-text-faint">
+      <div className="card rise mt-4 p-4">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-text-faint">
           Who powers what
         </p>
         <ul className="mt-2 flex flex-col gap-1.5 text-[12.5px] text-text-dim">
