@@ -208,3 +208,33 @@ export function getBridgeOps(): BridgeOps {
 export function bridgeIsSimulated(): boolean {
   return isDemoMode();
 }
+
+/** Response shape of POST /api/bridge (see src/app/api/bridge/route.ts). */
+interface BridgeRouteResponse {
+  ok: boolean;
+  burnTx?: TxRef;
+  mintTx?: TxRef;
+  error?: string;
+}
+
+/**
+ * Real-mode bridge from the BROWSER: POST to /api/bridge, which runs the real
+ * bridge-kit flow server-side (where CCTP_PRIVATE_KEY lives). Mirrors the
+ * engine/fx.ts → /api/fx pattern so the engine's aggregate step works from the
+ * client in real mode without bundling bridge-kit or leaking the key. Throws an
+ * honest error on a non-OK response — never masks a failure.
+ */
+export async function bridgeViaRoute(
+  params: BridgeToArcParams,
+): Promise<BridgeToArcResult> {
+  const res = await fetch("/api/bridge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const data = (await res.json().catch(() => ({}))) as BridgeRouteResponse;
+  if (!res.ok || !data.ok || !data.burnTx || !data.mintTx) {
+    throw new Error(data.error ?? `[slip] CCTP bridge route failed (${res.status}).`);
+  }
+  return { burnTx: data.burnTx, mintTx: data.mintTx, simulated: false };
+}

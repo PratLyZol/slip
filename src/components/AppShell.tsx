@@ -13,6 +13,7 @@ import WalletPill from "./WalletPill";
 const NAV = [
   { href: "/", label: "Send", icon: SendIcon },
   { href: "/batch", label: "Batch", icon: BatchIcon },
+  { href: "/bridge", label: "Bridge", icon: BridgeIcon },
   { href: "/private", label: "Private", icon: ShieldIcon },
   { href: "/architecture", label: "How", icon: LayersIcon },
 ] as const;
@@ -103,6 +104,19 @@ function BatchIcon({ active }: IconProps) {
         stroke={stroke(active)}
         strokeWidth="1.7"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+function BridgeIcon({ active }: IconProps) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 17V9m18 8V9M3 12h18M7 12c0-2 2-3 5-3s5 1 5 3"
+        stroke={stroke(active)}
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
