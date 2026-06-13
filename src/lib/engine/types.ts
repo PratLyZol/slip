@@ -156,8 +156,10 @@ export interface PrivacyArtifacts {
 export interface ResolveResult {
   /** The address the recipient handle maps to (display only at this stage). */
   address: Address;
-  /** How it was resolved, e.g. "demo" | "ens". */
+  /** How it was resolved: a real ENS public-resolver read, or the demo mapping. */
   via: "demo" | "ens";
+  /** Optional human note, e.g. why an ENS read fell back to a demo address. */
+  note?: string;
 }
 
 /** Result of step 2 — aggregate (honest pass-through; verifies USDC balance). */

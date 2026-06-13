@@ -56,9 +56,23 @@ export default function EngineSteps({ states, showcase = false }: Props) {
                 <StatusTag status={status} />
               </div>
               {showcase ? (
-                <p className="mt-0.5 text-[12.5px] leading-snug text-text-dim">
-                  {meta.blurb}
-                </p>
+                <>
+                  <p className="mt-0.5 text-[12.5px] leading-snug text-text-dim">
+                    {meta.blurb}
+                  </p>
+                  {meta.sponsors && meta.sponsors.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {meta.sponsors.map((s) => (
+                        <span
+                          key={s}
+                          className="rounded-md border border-[var(--hair)] bg-ink-850 px-1.5 py-0.5 text-[10px] font-medium text-text-faint"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
               ) : (
                 state?.detail && (
                   <p className="mt-0.5 text-[12px] leading-snug text-text-dim">

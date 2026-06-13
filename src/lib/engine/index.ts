@@ -55,10 +55,16 @@ export async function runSend(
   // Step 1 — Resolve.
   emit({ step: EngineStep.Resolve, status: "running" });
   const resolved = await resolve(req.recipient);
+  const resolveSuffix =
+    resolved.via === "ens"
+      ? " (via ENS)"
+      : resolved.note
+        ? ` (${resolved.note})`
+        : "";
   emit({
     step: EngineStep.Resolve,
     status: "done",
-    detail: `${req.recipient} → ${shortAddr(resolved.address)}`,
+    detail: `${req.recipient} → ${shortAddr(resolved.address)}${resolveSuffix}`,
   });
 
   // Step 2 — Aggregate (honest pass-through; verifies USDC balance).

@@ -21,6 +21,13 @@ import {
   addressFromSecret,
   recipientAddressFromSecret,
 } from "../src/lib/engine/counterfactual.ts";
+import {
+  parseBatchInput,
+  validRows,
+  runBatch,
+  batchToCsv,
+} from "../src/lib/engine/batch.ts";
+import { resolve, isEnsName } from "../src/lib/engine/resolve.ts";
 import type {
   ClaimStepState,
   StepState,
@@ -196,6 +203,130 @@ async function main() {
   console.log("   explorer:          " + claim.withdrawTx.explorerUrl);
   console.log("   claimed at:        " + claim.claimedAt);
   console.log("");
+
+  // -----------------------------------------------------------------------
+  // PHASE 5 — Batch: parse a 6-row list, run the engine over all rows, assert
+  // N INDEPENDENT links whose payloads decode to EXACTLY their own row (no
+  // cross-leakage). Print the CSV.
+  // -----------------------------------------------------------------------
+  console.log("→ Batch: parsing a 6-row sample and paying everyone\n");
+
+  const SAMPLE = [
+    "name, amount, region", // header (must be detected + skipped)
+    "alice.eth, 250, US",
+    "Mateo Rossi, 180.50, EU",
+    "priya, 320, US",
+    "Sofia Müller, 210, EU",
+    "jordan, 95, US",
+    "Luca Bianchi, 140.75, EU",
+    "broken-row, notanumber, US", // invalid — must be filtered out
+  ].join("\n");
+
+  const parsed = parseBatchInput(SAMPLE);
+  const valid = validRows(parsed);
+  assert(parsed.length === 7, `expected 7 data rows, got ${parsed.length}`);
+  assert(valid.length === 6, `expected 6 valid rows, got ${valid.length}`);
+  assert(
+    parsed[0].name === "alice.eth" && parsed[0].region === "US",
+    "header row should have been skipped (first data row is alice.eth)",
+  );
+  const invalid = parsed.find((r) => r.errors.length > 0);
+  assert(invalid?.name === "broken-row", "the invalid row should be 'broken-row'");
+
+  const batchOrigin = "https://slip.cash";
+  const batchResults = await runBatch(
+    valid,
+    batchOrigin,
+    "Demo Sender",
+    () => {},
+    3,
+  );
+
+  assert(
+    batchResults.length === 6,
+    `batch should produce 6 results, got ${batchResults.length}`,
+  );
+  assert(
+    batchResults.every((r) => r.status === "ready"),
+    "every batch row should settle to 'ready'",
+  );
+
+  // INDEPENDENCE: each link is distinct AND decodes to exactly its own row.
+  const seenSecrets = new Set<string>();
+  for (const r of batchResults) {
+    assert(r.claimUrl !== undefined, `row ${r.row.name} has no claim URL`);
+    assert(r.result !== undefined, `row ${r.row.name} has no engine result`);
+
+    const frag = r.claimUrl!.split("#")[1];
+    assert(frag !== undefined, `row ${r.row.name} claim URL has no fragment`);
+    const decoded = decodeClaimFragment(frag);
+    assert(decoded.ok, `row ${r.row.name} claim link failed to decode`);
+
+    // No cross-leakage: this link's payload matches THIS row only.
+    assert(
+      decoded.payload.amountUsdc === r.row.amount.toFixed(2),
+      `row ${r.row.name}: link amount ${decoded.payload.amountUsdc} ≠ row amount ${r.row.amount.toFixed(2)}`,
+    );
+    assert(
+      decoded.payload.region === r.row.region,
+      `row ${r.row.name}: link region ${decoded.payload.region} ≠ row region ${r.row.region}`,
+    );
+    assert(
+      decoded.payload.secret === r.result!.secret,
+      `row ${r.row.name}: link secret does not match its engine result`,
+    );
+
+    // Each secret unique → genuinely independent claims.
+    assert(
+      !seenSecrets.has(decoded.payload.secret),
+      `duplicate secret across rows — links are NOT independent (${r.row.name})`,
+    );
+    seenSecrets.add(decoded.payload.secret);
+  }
+  assert(seenSecrets.size === 6, "expected 6 unique secrets across the batch");
+
+  const csv = batchToCsv(batchResults);
+  const csvLines = csv.split("\n");
+  assert(
+    csvLines[0] === "name,amount,region,claimUrl",
+    "CSV header mismatch",
+  );
+  assert(csvLines.length === 7, `CSV should have header + 6 rows, got ${csvLines.length}`);
+
+  console.log("✓ 6 independent claim links, no cross-leakage. Payout CSV:\n");
+  console.log(csv);
+  console.log("");
+
+  // -----------------------------------------------------------------------
+  // PHASE 6 — ENS: attempt a real resolution of vitalik.eth with a short
+  // timeout. On network failure, assert the graceful demo fallback instead
+  // (don't let CI-less network flakiness fail the build).
+  // -----------------------------------------------------------------------
+  console.log("→ ENS: resolving vitalik.eth (real read, graceful fallback)\n");
+
+  assert(isEnsName("vitalik.eth"), "vitalik.eth should be detected as an ENS name");
+  assert(!isEnsName("alice"), "a bare name should NOT be an ENS name");
+
+  const ens = await resolve("vitalik.eth");
+  assert(ens.address.startsWith("0x"), "ENS resolve should return an address");
+  if (ens.via === "ens") {
+    console.log("✓ Real ENS read succeeded: vitalik.eth → " + ens.address);
+  } else {
+    // Network unavailable / no record → graceful fallback path.
+    assert(
+      ens.via === "demo" && typeof ens.note === "string",
+      "ENS network failure must degrade to a demo address WITH a note",
+    );
+    console.log(
+      "✓ ENS read unavailable — graceful fallback to demo address: " +
+        ens.address +
+        " (" +
+        ens.note +
+        ")",
+    );
+  }
+  console.log("");
+
   console.log("SMOKE PASS ✅");
 }
 

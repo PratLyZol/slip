@@ -75,3 +75,43 @@ export function saveSentReceipt(secret: Hex, receipt: SentReceipt): void {
     // Storage unavailable / quota — non-fatal; the send itself still succeeded.
   }
 }
+
+/** A stored send receipt paired with its secret (for enumeration). */
+export interface SentReceiptWithSecret {
+  secret: Hex;
+  receipt: SentReceipt;
+}
+
+/**
+ * Enumerate all stored send receipts in this browser, newest first. Used by the
+ * /private proof view to pick the most recent send when no ?secret= is given.
+ */
+export function listSentReceipts(): SentReceiptWithSecret[] {
+  if (!hasStorage()) return [];
+  const out: SentReceiptWithSecret[] = [];
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (!key || !key.startsWith(STORAGE_PREFIX)) continue;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const receipt = JSON.parse(raw) as SentReceipt;
+        out.push({ secret: key.slice(STORAGE_PREFIX.length) as Hex, receipt });
+      } catch {
+        // skip malformed entry
+      }
+    }
+  } catch {
+    return [];
+  }
+  return out.sort(
+    (a, b) =>
+      new Date(b.receipt.sentAt).getTime() - new Date(a.receipt.sentAt).getTime(),
+  );
+}
+
+/** The most recent stored send receipt, or null. */
+export function mostRecentSentReceipt(): SentReceiptWithSecret | null {
+  return listSentReceipts()[0] ?? null;
+}
