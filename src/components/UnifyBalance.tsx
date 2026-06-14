@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { runBridge } from "@/lib/engine";
 import { EngineStep } from "@/lib/engine/types";
 import {
@@ -61,6 +62,11 @@ function UnifyModal({ onClose }: { onClose: () => void }) {
     wallet.chainId,
   );
   const [switching, setSwitching] = useState(false);
+
+  // Portal target — only available on the client. Gate the portal on mount so
+  // SSR/prerender doesn't touch document.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,9 +154,15 @@ function UnifyModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return (
+  if (!mounted) return null;
+
+  // Portal to <body> so the modal escapes the transformed `rise` ancestors on
+  // Home (a CSS transform makes an element the containing block for fixed
+  // descendants and traps their z-index) — without this it renders BEHIND the
+  // nav and action cards.
+  return createPortal(
     <div
-      className="fixed inset-0 z-30 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/60 py-6 backdrop-blur-sm sm:items-center"
       role="dialog"
       aria-modal="true"
       onClick={running ? undefined : onClose}
@@ -305,7 +317,8 @@ function UnifyModal({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
