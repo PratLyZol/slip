@@ -14,8 +14,8 @@
  * Plus the line "Even the builder can't read this." and a small comparison
  * against a normal transfer (which leaks from / to / $amount).
  *
- * Simulated artifacts are labeled honestly (AGENTS.md): demo tx hashes 404 on
- * the real explorer, so a caption says so.
+ * Every leg is REAL (AGENTS.md — no simulation path): the tx hashes link to
+ * live Arc / Base Sepolia explorer transactions.
  */
 
 import { useState } from "react";
@@ -143,11 +143,6 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
   const transferLeg = privacy.legs.find((l) => l.kind === "transfer");
   const amount = formatUsd(Number(receipt.amountUsdc));
 
-  // Any leg we render simulated → show the honest "demo hashes 404" caption.
-  const anySimulated =
-    (depositLeg?.simulated ?? true) ||
-    (claim?.unshield?.simulated ?? claim?.withdrawSimulated ?? true);
-
   return (
     <div className="flex flex-1 flex-col">
       <header className="rise pb-5 pt-2">
@@ -181,7 +176,6 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
             body="A visible deposit into the shielded pool. An observer sees a deposit happened — and that's the last thing they can read."
             txHash={depositLeg?.txHash}
             explorerUrl={depositLeg?.explorerUrl}
-            simulated={depositLeg?.simulated}
           />
 
           {/* MIDDLE — the private leg */}
@@ -201,7 +195,6 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
             explorerUrl={
               claim?.unshield?.explorerUrl ?? claim?.withdrawExplorerUrl
             }
-            simulated={claim?.unshield?.simulated ?? claim?.withdrawSimulated}
             pending={!claim}
           />
         </div>
@@ -217,15 +210,6 @@ function ProofView({ secret, receipt }: { secret: Hex; receipt: SentReceipt }) {
 
       {/* Comparison */}
       <Comparison amount={amount} />
-
-      {anySimulated && (
-        <p className="mt-4 text-[11px] leading-snug text-text-faint">
-          Demo mode: the tx hashes above are deterministic simulations, so they
-          will 404 on the real ArcScan explorer. With real credentials these are
-          live Arc testnet transactions — the privacy guarantee is identical
-          either way.
-        </p>
-      )}
     </div>
   );
 }
@@ -237,7 +221,6 @@ function EdgeCard({
   body,
   txHash,
   explorerUrl,
-  simulated,
   pending,
 }: {
   tone: "public";
@@ -246,7 +229,6 @@ function EdgeCard({
   body: string;
   txHash?: string;
   explorerUrl?: string;
-  simulated?: boolean;
   pending?: boolean;
 }) {
   void tone;
@@ -278,13 +260,8 @@ function EdgeCard({
               className="shrink-0 text-[11px] font-semibold text-volt underline-offset-2 hover:underline"
             >
               explorer ↗
-              {simulated ? " (sim)" : ""}
             </a>
-          ) : (
-            <span className="shrink-0 text-[11px] text-text-faint">
-              {simulated ? "simulated" : ""}
-            </span>
-          )}
+          ) : null}
         </div>
       ) : (
         <p className="mt-3 text-[11px] text-text-faint">

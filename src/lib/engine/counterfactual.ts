@@ -7,9 +7,9 @@
  *
  * Implementation: we derive a private key from the 32-byte secret (keccak so the
  * key is well-distributed even if the secret were ever weak) and take the
- * matching EOA address via viem's `privateKeyToAccount`. A later agent can swap
- * this for a true ERC-4337 CREATE2 `initCode` address using the same secret as
- * the salt — the interface (secret → address) is unchanged.
+ * matching EOA address via viem's `privateKeyToAccount`. This is a REAL
+ * deterministic derivation — no simulation: the same secret always yields the
+ * same address, on both the send and claim sides.
  */
 
 import { keccak256, toHex, concatHex, type Address, type Hex } from "viem";
@@ -33,19 +33,15 @@ export function addressFromSecret(secret: Hex): Address {
 }
 
 /**
- * Derive the recipient's WALLETLESS embedded account from the claim secret.
+ * Derive a deterministic WALLETLESS account address from the claim secret,
+ * domain-separated from {@link addressFromSecret} by a fixed "recipient" salt so
+ * the two addresses can never collide.
  *
- * PRD Phase 2: the recipient never makes a wallet, never sees a seed phrase. In
- * demo mode we simulate an embedded account being silently created for them by
- * deriving a deterministic address from the secret + a fixed "recipient" salt.
- * It is distinct from {@link addressFromSecret} (the counterfactual that holds
- * the settled USDC) so the claim story is "money moves from the claim account
- * into the account we created for you".
- *
- * Real path (flag-gated, later): if a Dynamic env id exists, the recipient may
- * optionally log in with email to bind a real embedded wallet here — but that
- * path is never required in demo. The secret → recipient-address interface
- * stays stable so a later agent can swap the derivation without touching callers.
+ * This is a REAL derivation (keccak of secret+salt → private key → EOA), not a
+ * simulation. It is used by the Swap Kit FX leg (adapters/swap.ts) to sign with
+ * the same key the recipient controls via the secret. The real recipient payout
+ * address (where claimed funds land) is the Dynamic pregen wallet carried in the
+ * v2 claim payload, NOT this derivation.
  */
 export function recipientAddressFromSecret(secret: Hex): Address {
   // Domain-separate from the counterfactual key with a fixed salt so the two

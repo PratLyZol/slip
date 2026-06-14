@@ -2,12 +2,10 @@
  * POST /api/fx — server route that runs the REAL Circle StableFX USDC→EURC flow
  * (TICKETS Track D1, PLAN §6). Exists so the StableFX API key AND the taker's
  * signing key (derived from the claim secret) never reach the browser: the
- * browser-side FX selector in `engine/fx.ts` POSTs here in real mode.
+ * browser-side FX selector in `engine/fx.ts` POSTs here.
  *
- * NO per-adapter feature flag (user directive): the engine selects real vs sim
- * on the GLOBAL `isDemoMode()`. This route assumes it is only called in real
- * mode; it runs the real flow and returns an HONEST error on failure — it never
- * fabricates a fake success.
+ * REAL-ONLY (no demo/simulation fallback): this route runs the real FX flow and
+ * returns an HONEST error on failure — it never fabricates a fake success.
  *
  * Request  { secret, region, amountUsdc }
  * Response 200 { ok:true,  token, amount, rate, txHash?, status, note? }
@@ -15,7 +13,6 @@
  *          5xx { ok:false, error }                          // honest failure
  */
 
-import { isDemoMode } from "../../../lib/config";
 import { swapUsdcToEurc } from "../../../lib/adapters/swap";
 import { localTokenForRegion } from "../../../lib/engine/fx";
 import type { Region } from "../../../lib/engine/types";
@@ -35,15 +32,6 @@ function isHexSecret(v: unknown): v is Hex {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  // Demo mode never touches this route (the selector simulates client-side); if
-  // it is hit anyway, refuse rather than pretend.
-  if (isDemoMode()) {
-    return Response.json(
-      { ok: false, error: "Demo mode — FX is simulated client-side, not via /api/fx." },
-      { status: 400 },
-    );
-  }
-
   let body: FxRequestBody;
   try {
     body = (await request.json()) as FxRequestBody;

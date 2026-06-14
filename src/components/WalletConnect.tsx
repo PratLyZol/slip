@@ -1,13 +1,12 @@
 "use client";
 
 /**
- * Real wallet-connect control for the top bar (replaces the demo WalletPill).
+ * Real wallet-connect control for the top bar.
  *
- * It talks to Dynamic DIRECTLY rather than the demo-aware WalletProvider, so the
- * header offers a genuine connect flow even while the rest of the app runs in
- * demo mode (engine adapters still branch on isDemoMode()). Dynamic is mounted
- * whenever NEXT_PUBLIC_DYNAMIC_ENV_ID is present (see Providers); when it isn't,
- * we render a disabled fallback instead of calling Dynamic hooks.
+ * It talks to Dynamic DIRECTLY so the header offers a genuine connect flow.
+ * Dynamic is mounted whenever NEXT_PUBLIC_DYNAMIC_ENV_ID is present (see
+ * Providers); when it isn't, we render a disabled fallback instead of calling
+ * Dynamic hooks.
  */
 
 import { useEffect, useRef, useState } from "react";

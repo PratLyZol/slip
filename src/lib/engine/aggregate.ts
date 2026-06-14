@@ -17,7 +17,8 @@
  * 84532) from the connected wallet and passes it in directly. The server key
  * (CCTP_PRIVATE_KEY) is no longer used in the bridge path.
  *
- * Demo path: deterministic simulation — no credentials, no network.
+ * Real-only: both parts read/move real funds — no simulation, no artificial
+ * latency. They surface honest errors when a credential/wallet is absent.
  */
 
 import type { Address, WalletClient } from "viem";
@@ -27,7 +28,6 @@ import {
   type BridgeToArcParams,
   type BridgeToArcResult,
 } from "../adapters/bridge";
-import { simLatency, sleep } from "../demo/sim";
 import type { AggregateResult } from "./types";
 
 /**
@@ -39,7 +39,6 @@ export async function aggregate(
   senderAddress?: Address,
   originChainId?: number,
 ): Promise<AggregateResult> {
-  await sleep(simLatency(400, 900));
   // Read the wallet's USDC on its connected origin chain (the CCTP burn source).
   const availableUsdc = await getUsdcBalance(senderAddress, originChainId);
   return {
