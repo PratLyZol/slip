@@ -103,9 +103,17 @@ export function isPregenConfigured(): boolean {
  *
  * It is deliberately INDEPENDENT of whether Unlink itself is configured: even a
  * fully-real Unlink withdraw must never fire to a recipient with no claimable key.
+ *
+ * CLIENT-SIDE: this gate runs in the recipient's browser (engine/claim.ts +
+ * adapters/unlink.ts `unshield`), so it must depend ONLY on a client-visible
+ * signal — NOT the server-only `DYNAMIC_API_TOKEN` (undefined in the browser,
+ * which would block every real claim). The payout address was already created
+ * server-side at SEND time via the real-only pregen path (the keyless demo-
+ * address path is deleted), so the presence of the public Dynamic env id is the
+ * correct marker that the recipient address is a real, OTP-claimable pregen wallet.
  */
 export function isRealPayoutSafe(): boolean {
-  return isPregenConfigured();
+  return !!DYNAMIC_ENV_ID;
 }
 
 /**
