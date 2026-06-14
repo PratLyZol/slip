@@ -20,10 +20,14 @@
  *    moves their amount from the sender's shielded balance to their claim account.
  *  - N claim links, one per recipient.
  *
- * The privacy path degrades safely (PRD §8): if the shared shield throws, the
- * send falls back to per-recipient direct settle so it NEVER blocks.
+ * The privacy path degrades safely ONLY into a REAL fallback: if the shared
+ * shield throws, the send falls back to a per-recipient direct on-chain USDC
+ * transfer (settle.ts). That fallback STILL moves real funds — if it also fails,
+ * the whole distribute throws (a failed step), because a claim link must NEVER be
+ * emitted when no money actually moved.
  */
 
+import type { WalletClient } from "viem";
 import { getShieldOps } from "../adapters/unlink";
 import { deriveCounterfactual, generateClaimSecret } from "./counterfactual";
 import { resolve } from "./resolve";
@@ -152,29 +156,44 @@ export async function runDistribute(
   // deposit of the bridged USDC already on Arc, signed on Arc by the connected
   // wallet). This is the single PUBLIC deposit edge the whole batch shares.
   // The Arc network switch — getWalletClient("5042002") — happens HERE, so
-  // distribute is independent of whether the bridge ran in the same JS call.
-  // Degrades safely (PRD §8): on failure we fall back to per-recipient settle.
+  // distribute is independent of whether the bridge ran in the same JS call. The
+  // SAME Arc wallet client funds the shielded deposit AND (on the degraded path)
+  // signs the direct USDC transfer below — so the fallback also moves real funds.
   emit({ step: EngineStep.Shield, status: "running" });
   let senderUnlinkAddress: string | undefined;
   let shieldLeg: PrivacyLeg | undefined;
   let privacyEnabled = false;
   let skippedReason: string | undefined;
+  // Resolved ONCE up front: required by both the shield (deposit) and the
+  // degraded direct settle. If no wallet is connected we cannot move funds at
+  // all, so this is a hard failure of the whole distribute — not a degrade.
+  if (!req.getWalletClient) {
+    emit({
+      step: EngineStep.Shield,
+      status: "failed",
+      detail: "No wallet connected — cannot move funds.",
+    });
+    throw new Error(
+      "No wallet connected — connect a wallet to fund the send.",
+    );
+  }
+  const arcWalletClient: WalletClient | undefined =
+    await req.getWalletClient("5042002");
+  if (!arcWalletClient) {
+    emit({
+      step: EngineStep.Shield,
+      status: "failed",
+      detail: "Could not obtain an Arc wallet client.",
+    });
+    throw new Error(
+      "Could not obtain an Arc wallet client — connect a wallet and allow the Arc network.",
+    );
+  }
   try {
     senderUnlinkAddress = await ops.senderAddress(batchSecret);
     // The shield is a WALLET-FUNDED deposit of the bridged USDC — it needs the
     // connected wallet's viem client on Arc (5042002) to sign the ERC-20
-    // approve + deposit. Demo ShieldOps ignores it; the real path requires it.
-    if (!req.getWalletClient) {
-      throw new Error(
-        "No wallet connected — connect a wallet to fund the shielded deposit.",
-      );
-    }
-    const arcWalletClient = await req.getWalletClient("5042002");
-    if (!arcWalletClient) {
-      throw new Error(
-        "Could not obtain an Arc wallet client — connect a wallet and allow the Arc network.",
-      );
-    }
+    // approve + deposit.
     shieldLeg = await ops.shieldSender(batchSecret, totalUsdc, arcWalletClient);
     privacyEnabled = true;
     emit({
@@ -187,16 +206,19 @@ export async function runDistribute(
       explorerUrl: shieldLeg.explorerUrl,
     });
   } catch (err) {
-    // PRD §8: never block the send on the privacy leg.
+    // Degrade the PRIVACY leg only — NOT the money movement. We fall back to a
+    // REAL direct USDC transfer below (settle.ts), which still moves funds; if
+    // that also fails the whole distribute throws (no fake success). privacy is
+    // marked disabled with an honest skippedReason for the proof view.
     skippedReason =
       err instanceof Error ? err.message : "Unlink shielded path unavailable";
     console.warn(
-      `[slip] shield path failed — falling back to direct settle. (${skippedReason})`,
+      `[slip] shield path failed — falling back to a REAL direct USDC transfer. (${skippedReason})`,
     );
     emit({
       step: EngineStep.Shield,
       status: "done",
-      detail: "Skipped — settling directly",
+      detail: "Privacy unavailable — transferring USDC directly",
     });
   }
 
@@ -233,19 +255,46 @@ export async function runDistribute(
         plan.amountUsdc,
       );
       privacy.claimUnlinkAddress = claimUnlinkAddress;
-      privacy.legs = shieldLeg ? [shieldLeg, transferLeg] : [transferLeg];
-      // The "settle" artifact for the UI is the shared public deposit edge —
-      // there is no separate public USDC transfer to the claim account.
+      // privacyEnabled is only ever set true right after shieldLeg is assigned,
+      // so it is guaranteed present here — assert it so the UI artifact below can
+      // never silently fall back to a fake "0x"/simulated tx.
+      if (!shieldLeg) {
+        throw new Error(
+          "Invariant violated — privacy enabled without a shield leg.",
+        );
+      }
+      privacy.legs = [shieldLeg, transferLeg];
+      // The "settle" artifact for the UI is the shared public deposit edge (a
+      // REAL depositWithApproval tx) — there is no separate public USDC transfer
+      // to the claim account. Carries the shield's real hash/simulated flag.
       settleTx = {
-        hash: shieldLeg?.txHash ?? ("0x" as `0x${string}`),
-        explorerUrl: shieldLeg?.explorerUrl ?? "",
-        simulated: shieldLeg?.simulated ?? true,
+        hash: shieldLeg.txHash ?? ("0x" as `0x${string}`),
+        explorerUrl: shieldLeg.explorerUrl ?? "",
+        simulated: shieldLeg.simulated,
       };
       if (i + 1 < plans.length) await sleep(fanoutDelayMs());
     } else {
-      // Degraded path: direct USDC settle to this claim's counterfactual account.
-      const settled = await settle(claimCf.address, plan.recipient.amountUsd, plan.claimSecret);
-      settleTx = settled.tx;
+      // Degraded path: a REAL direct USDC transfer to this claim's account,
+      // signed by the connected Arc wallet. settle() throws on any failure (no
+      // simulation) — surface a FAILED Settle step and re-throw so we NEVER emit
+      // a claim link for funds that did not move.
+      try {
+        const settled = await settle(
+          claimCf.address,
+          plan.recipient.amountUsd,
+          arcWalletClient,
+        );
+        settleTx = settled.tx;
+      } catch (err) {
+        const reason =
+          err instanceof Error ? err.message : "Direct USDC settle failed";
+        emit({
+          step: EngineStep.Settle,
+          status: "failed",
+          detail: `Settle failed — ${reason}`,
+        });
+        throw err;
+      }
     }
 
     const claimPayload: ClaimPayload = {

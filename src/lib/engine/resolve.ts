@@ -28,7 +28,6 @@ import {
   type Address,
 } from "viem";
 import { mainnet } from "viem/chains";
-import { simLatency, sleep } from "../demo/sim";
 import type { ResolveResult } from "./types";
 
 /**
@@ -164,7 +163,6 @@ export async function resolve(recipient: string): Promise<ResolveResult> {
         return { address: addr, via: "ens" };
       }
       // Registered-looking name with no address record → fall back, note it.
-      await sleep(simLatency(150, 350));
       return {
         address: demoAddressFor(recipient),
         via: "demo",
@@ -185,6 +183,5 @@ export async function resolve(recipient: string): Promise<ResolveResult> {
   }
 
   // Non-.eth handle: deterministic demo mapping (no network).
-  await sleep(simLatency(300, 700));
   return { address: demoAddressFor(recipient), via: "demo" };
 }
