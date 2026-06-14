@@ -112,6 +112,13 @@ await client.transfer({
 ```
 Signs with the spending key of the account bound to `createUnlinkClient`. Returns `TransactionHandle`.
 
+> **Gotcha (verified on Arc testnet):** the **recipient** `unlink1…` account must be
+> **registered** with Unlink *before* you transfer to it, or the relayer rejects with
+> `transfer.prepare failed: user not found: unlink1…`. The recipient normally registers
+> themselves at claim time (later), so for a send-time fan-out you must register their account
+> on their behalf first — build a client from the recipient's claimSecret and call
+> `ensureRegistered()` (idempotent) before `client.transfer({ recipientAddress })`.
+
 ### Withdraw (unshield to public EOA) — VERIFIED (withdraw.md)
 ```ts
 const tx = await client.withdraw({

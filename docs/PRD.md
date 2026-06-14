@@ -4,6 +4,12 @@
 
 > One-liner: build a payments app where the sender types a name and an amount, and the recipient taps a link and has money in their local stablecoin — having never made a wallet, held gas, or learned what a chain is. The amount and the social graph are invisible on-chain by default.
 
+> ⚠️ **Superseded in places by `docs/PLAN.md` (the source of truth).** This PRD's original
+> design used ERC-4337 counterfactual accounts + a paymaster for the claim. **That was
+> dropped:** recipient payout is a Dynamic **pregen** wallet (OTP-claimed) and the claim is
+> gasless via **Unlink's relayer** (no AA/4337/CREATE2/paymaster). The send is split into a
+> **CCTP bridge** leg + an **Unlink shield/fan-out** leg. See PLAN's "As-built" block.
+
 ---
 
 ## 0. Context
@@ -16,24 +22,31 @@
 
 ## 1. Product summary
 
-Two surfaces, **one engine**: *resolve recipient → aggregate sender's assets to USDC → settle to a counterfactual account through a shielded balance → recipient claims walletlessly, gas sponsored, FX'd into their local stablecoin at claim time.*
+Two surfaces, **one engine**: *resolve recipient → CCTP-bridge USDC onto Arc → shield Σ through an Unlink balance → privately fan out to each recipient's claim account → recipient claims walletlessly (OTP → pregen wallet), gasless via Unlink's relayer, delivered as their local stablecoin.*
 
 - **Surface A — Single send (consumer):** type `alice`, enter `$50`, tap Send. "Sent $50 to alice." Claim link / QR generated.
 - **Surface B — Batch payout (B2B):** paste a list of names, hit Pay. Each row runs the same engine. Payees can't see each other; the treasury isn't doxxed.
 
 Build A's engine completely before touching B.
 
-## 2. The seven steps of a send
+## 2. The flow of a send (as-built)
 
-1. **Resolve** recipient name (ENS/username) → identity/address.
-2. **Aggregate** sender's holdings → USDC (Dynamic chain abstraction).
-3. **Derive** the recipient's **counterfactual account address** (CREATE2 / ERC-4337 `initCode`), salt derived from a per-claim secret.
-4. **Shield** the transfer through an **Unlink** balance — amount and sender↔recipient link not visible on-chain.
-5. **Settle** USDC to the counterfactual address (account not yet deployed).
-6. **Sponsor gas** via paymaster — neither party needs the native token.
-7. **Claim:** link/QR → first transaction **deploys the account and withdraws in one batched UserOp** → **Arc FX** converts USDC → recipient's **local stablecoin** (EURC in EU, USDC elsewhere) at claim time.
+Two independently-retriable legs (the two-step `/send` screen), then the claim:
 
-Kill-shot: judge does step 1 and gets a result; reveal steps 2–7; open the block explorer and show **even the builder can't read the amount or the graph.**
+**① Bridge to Arc** (`runBridge`)
+1. **Resolve** each recipient (email/phone) → a Dynamic **pregen** payout address; `.eth` → ENS read.
+2. **Aggregate** via Circle **CCTP**: the connected wallet burns Σ USDC on its origin chain (Base Sepolia, etc.); Circle's forwarder mints Σ on Arc.
+
+**② Distribute** (`runDistribute`, on Arc)
+3. **Shield** Σ once into the sender's Unlink balance — a wallet-funded `depositWithApproval` (amount + edge hidden on-chain).
+4. **Private fan-out** — N sequential Unlink `transfer()`s from the shielded balance to each recipient's (pre-registered) claim account.
+5. **Claim links** — one `/claim#<base64url(payload)>` per recipient; the secret rides the URL fragment.
+
+**Claim** (recipient's browser)
+6. **OTP login** (Dynamic) binds their pregen wallet; **Unlink's relayer withdraws** to that address — recipient pays no gas. No account deploy, no paymaster.
+7. **Local stablecoin** at claim — USDC today (EU→EURC attempts Circle Swap Kit, but no route on Arc testnet → honest USDC). No fabricated FX.
+
+Kill-shot: judge does step 1 and gets a result; reveal the rest; open the block explorer and show **even the builder can't read the amount or the graph.**
 
 ## 3. Design decisions (made — do not relitigate)
 
@@ -60,8 +73,9 @@ Kill-shot: judge does step 1 and gets a result; reveal steps 2–7; open the blo
 - **Frontend:** Next.js (App Router) + Tailwind, mobile-first.
 - **Auth + wallets + aggregation:** Dynamic SDK (React).
 - **Chain:** Arc testnet (EVM); Circle primitives (USDC, EURC, Circle Wallets, CCTP/Gateway, FX).
-- **AA:** ERC-4337 smart accounts, counterfactual deploy (`initCode` + paymaster). Use Dynamic/Circle-native before custom factories.
-- **Privacy:** Unlink SDK (shielded balances on Arc testnet).
+- **AA:** ~~ERC-4337 / paymaster~~ **DROPPED** — claim is gasless via Unlink's relayer; payout is a Dynamic pregen wallet (no smart-account deploy).
+- **Aggregation:** Circle CCTP (`@circle-fin/bridge-kit`) — wallet-signed burn, forwarder mint.
+- **Privacy:** Unlink SDK (shielded balances on Arc testnet) — wallet-funded deposit + private transfers + relayer withdraw.
 - **QR:** lightweight lib encoding the claim URL.
 - **State:** stateless-by-link; minimal kv only if batch needs it.
 

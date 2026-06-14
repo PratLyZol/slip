@@ -8,63 +8,94 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Slip — build conventions
 
-**`docs/PLAN.md` is the current source of truth** — it folds in verified findings + locked
-decisions and **supersedes the PRD and this file's specifics where they conflict** (key
-deltas: pregen identity wallets replace the counterfactual payout; CCTP for aggregation;
-account abstraction dropped; **batch-first**; StableFX dropped — local currency at claim
-is a direct destination-token choice, EU→EURC else USDC).
-Read `docs/PLAN.md` first, then `docs/PRD.md` for product context. Verified SDK APIs live in
-`docs/research/` (arc.md, dynamic.md, unlink.md) — **use those, never invent SDK signatures**.
+**`docs/PLAN.md` is the source of truth for architecture; this file is the quick build
+reference.** Verified SDK APIs live in `docs/research/` (arc.md, dynamic.md, unlink.md) —
+**use those, never invent SDK signatures.**
 
-## Architecture
+The app is **real-only**: there is no demo/simulation mode and no `isDemoMode()`. Every leg
+either executes a real on-chain/relayer operation or throws an **honest error** that surfaces
+in the UI. Nothing ever reports success without funds moving.
 
-One engine, two surfaces. The engine is the seven-step send pipeline (PRD §2).
+## What Slip does
+
+Pay anyone by email/phone. The sender bridges USDC onto Arc, shields it through Unlink, and
+fans it out privately; each recipient gets a claim link, logs in with an OTP (Dynamic
+pregen wallet), and withdraws — never having held gas or made a wallet. In a batch the
+payer↔payee mapping and per-recipient amounts are unlinkable on-chain.
+
+## Architecture — two legs, four screens
+
+The money path is split into two independently-retriable legs so a failure in one never
+wedges the other:
+
+- **`runBridge`** — CCTP aggregation: burn Σ on the sender's origin chain (Base Sepolia, etc.),
+  mint Σ on Arc (forwarder mode). Wallet-signed by the connected Dynamic wallet.
+- **`runDistribute`** — over funds already on Arc: shield Σ once (Unlink wallet-funded
+  deposit), then N sequential private transfers to each recipient's claim account, then N
+  claim links. `runBatchSend`/`runSend` are thin wrappers (`runBridge` then `runDistribute`).
 
 ```
 src/
-  app/                  # App Router pages: / (send), /claim, /batch, /private (proof view), /architecture
-  components/           # UI components
+  app/                  # App Router pages:
+                        #   /          Home — wallet + USDC across all chains
+                        #   /send      two-step: (1) Bridge to Arc  (2) Distribute
+                        #   /settings  switch active network (Base Sepolia <-> Arc) + balances
+                        #   /claim     recipient OTP login -> withdraw
+                        #   /batch /private /architecture  (secondary: proof + explainer views)
+  components/           # UI (SendScreen, HomeScreen, SettingsScreen, ClaimScreen, WalletProvider, ...)
   app/api/              # server routes (hold secrets): pregen, unlink/register,
-                        #   unlink/authorization-token, fx
+                        #   unlink/authorization-token, fx, bridge, notify (Resend email)
   lib/
-    engine/             # the send/claim pipeline (batch-first; N=1 = single send)
-      types.ts          # shared types: SendRequest(recipients[]), ClaimPayload v2, Region...
-      resolve.ts        # name/.eth -> address (ENS read); email/phone -> pregen via /api/pregen
-      aggregate.ts      # bridge sender USDC onto Arc via Circle CCTP (Dynamic has NO swap)
-      counterfactual.ts # LEGACY — payout address now comes from Dynamic pregen
-      shield.ts         # Unlink shielded leg (browser client + gasless faucet shield)
-      claim.ts          # relayer-submitted Unlink withdraw + FX at claim (NO AA/deploy)
+    engine/             # the pipeline (recipients[]-first; N=1 = single send)
+      types.ts          # SendRequest(recipients[]), BridgeRequest, DistributeRequest, ClaimPayload v2
+      bridge.ts         # runBridge — CCTP aggregation leg
+      distribute.ts     # runDistribute — shield + private fan-out + claim links (privacy-only path)
+      index.ts          # runBatchSend/runSend wrappers + re-exports
+      claim.ts          # Unlink relayer withdraw + FX at claim (NO AA/deploy/paymaster)
+      resolve.ts        # email/phone -> Dynamic pregen; .eth -> ENS read (raw viem)
+      aggregate.ts      # USDC sufficiency check + bridgeToArc (used by runBridge)
+      fx.ts             # FX at claim: EU -> EURC (via Swap Kit, see below), else USDC
+      counterfactual.ts # derives the Unlink claim account from a secret (NOT a 4337 account)
+      claimLink.ts      # /claim#<base64url(ClaimPayload)> encode/decode
     adapters/           # SDK wiring lives ONLY here, behind interfaces
-      arc.ts            # Arc + Base Sepolia chain config, token/CCTP addresses, explorer
-      unlink.ts         # @unlink-xyz/sdk@canary — /browser client + /admin (server routes)
-      pregen.ts         # Dynamic pregenerated wallets (waas/create) — server-only
-      bridge.ts         # Circle CCTP aggregation (@circle-fin/bridge-kit)
-      balance.ts        # USDC balance reads (viem)
-    (no simulated-adapter directory — real adapters are the only path)
+      arc.ts            # Arc + Base Sepolia chain config, token addresses, explorer, Dynamic networks
+      cctp-chains.ts    # CCTP source registry (burnable origins) + BALANCE_CHAINS (balance reads)
+      bridge.ts         # Circle CCTP (@circle-fin/bridge-kit) — wallet-signed burn, forwarder mint
+      unlink.ts         # @unlink-xyz/sdk/browser client + /admin auth routes; getShieldOps() is real-only
+      pregen.ts         # Dynamic pregenerated wallets (waas/create) — server-only, real-only
+      swap.ts           # OPTIONAL Circle Swap Kit USDC->EURC (no route on Arc testnet -> USDC fallback)
+      balance.ts        # USDC balance reads (viem): getUsdcBalance + getAllUsdcBalances (multi-chain)
+    (no demo/sim.ts, no settle.ts, no simulated-adapter — the real path is the only path)
 ```
 
 ## Verified chain facts (from docs/research/arc.md — do not re-research)
 
 - Arc testnet chain ID **5042002**, RPC `https://rpc.testnet.arc.network`, explorer `https://testnet.arcscan.app`, faucet `https://faucet.circle.com` (dispenses USDC + EURC).
 - USDC `0x3600000000000000000000000000000000000000` (native gas; 6 decimals as ERC-20, 18 in native gas accounting). EURC `0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a` (6 decimals).
-- **StableFX is DROPPED** (it required a contact-a-rep Circle API key with no bounty payoff). Local currency at claim is now a direct **destination-token choice — EU → EURC, else USDC** — delivered directly with no swap and no key (EURC is faucet-fundable). Optional stretch: real USDC→EURC via Circle Swap Kit (free self-serve key).
-- **Account abstraction is DROPPED.** The claim is gasless via Unlink's relayer (recipient pays nothing), so no paymaster/4337/ZeroDev. (FYI EntryPoint v0.6/v0.7 *are* deployed on Arc, but we don't use them; ZeroDev's hosted bundler does not serve Arc anyway.)
+- **Account abstraction is DROPPED.** The claim is gasless via Unlink's relayer (recipient pays nothing), so no paymaster/4337/ZeroDev/CREATE2 deploy. The recipient's *payout* address is a Dynamic **pregen** wallet (OTP-claimed); the Unlink *claim account* is derived from the claim secret via `account.fromSeed`.
+- **StableFX is DROPPED.** FX at claim is a destination-token choice: non-EU → USDC (true no-op, the withdrawn coin); EU → attempt a real Circle **Swap Kit** USDC→EURC. There is **no USDC↔EURC route on Arc testnet**, so the swap honestly falls back to USDC — in practice every recipient currently receives USDC. No fabricated rate, ever.
 
 ## Hard rules
 
-- **Real adapters are the only path.** Each integration (Dynamic pregen, Unlink shielded, Circle/CCTP/Arc) activates from its own env key/credential (`NEXT_PUBLIC_DYNAMIC_ENV_ID` etc.). When a required key or credential is absent, the adapter must surface an **honest error** — never silently simulate a result. There is no fake/simulated fallback; never fake a real integration.
-- **3 sponsor SDKs max:** Dynamic, Unlink, Arc/Circle. No LI.FI, no Privy, no ENS SDK (resolver read via raw `eth_call`/viem only), no database.
-- **Claim links carry everything.** Format: `/claim#<base64url(JSON ClaimPayload)>` — the secret lives in the URL **fragment** (never query string, never server logs). No server state for single sends.
+- **Real or honest error — never simulate.** Each integration (Dynamic pregen, Unlink shielded, Circle/CCTP/Arc, Resend email) activates from its own env credential. When a required key is absent, the adapter/route surfaces an **honest error** (e.g. server route 501 → client throw) that the UI shows. There is no fake/simulated fallback and no stub that fabricates data — that infrastructure was removed.
+- **The privacy path is the ONLY send path.** If the Unlink shield/transfer fails, the send emits a FAILED step and throws — it does NOT fall back to a public direct transfer (that stranded funds at a keyless address the claim could never reach). No claim link is ever produced without a real shielded transfer.
+- **The recipient's Unlink claim account must be registered before the sender transfers to it** (else the relayer rejects with `transfer.prepare failed: user not found`). `privateTransfer` registers it at send time from the claimSecret; idempotent (the recipient re-registers at claim).
+- **3 sponsor SDKs max:** Dynamic, Unlink, Arc/Circle (all `@circle-fin/*` count as one). No LI.FI, no Privy, no ENS SDK (resolver read via raw `eth_call`/viem only), no database.
+- **Claim links carry everything.** Format: `/claim#<base64url(JSON ClaimPayload v2)>` — the secret lives in the URL **fragment** (never query string, never server logs). No server state for a send.
 - **Terminology:** "local stablecoin", never "native token". Recipients see money words, not chain words.
-- **Stub honestly.** If a real API can't be wired yet (missing key, missing testnet pair), implement the interface as a clearly named stub (`// NOT YET WIRED` + console.warn) that surfaces the gap instead of returning fabricated data. Never fake a "real" integration.
-- **Arc is where privacy + FX live.** Shield, private transfer, withdraw, and FX all stay on Arc. The ONE cross-chain hop is **aggregation**: CCTP bridges USDC from Base Sepolia → Arc *before* shielding, so shielded funds never cross a public hop.
+- **Arc is where privacy + FX live.** Shield, private transfer, withdraw, and FX all stay on Arc. The ONE cross-chain hop is **aggregation**: CCTP bridges USDC from the origin chain → Arc *before* shielding, so shielded funds never cross a public hop.
 
-## Build order
+## Wallet / gas
 
-**Batch-first** (supersedes the PRD's "build A before B"): batch payout is the hero because the privacy property is only self-contained at N>1; single send is the N=1 case of the same engine. Tracks are sliced along adapter-interface seams and parallelized — see `docs/TICKETS.md`. The real path must compile and `npm run build` must pass at every step, even when some credentials are absent (those adapters surface honest errors rather than simulating).
+- The **sender** connects a Dynamic embedded wallet. It signs the CCTP burn on the **origin
+  chain** (needs origin-chain native gas, e.g. Base Sepolia ETH) and the Unlink deposit on
+  **Arc** (Arc uses USDC as native gas). `getWalletClient(chainId)` switches the embedded
+  wallet's active network before each leg; `WalletProvider` tracks `chainId`/`balances` and
+  exposes `refreshBalances()`.
+- **Recipients are always walletless** — Dynamic pregen wallet + Unlink relayer withdraw.
 
 ## Style
 
 - TypeScript strict, App Router, Tailwind v4 (already configured). Mobile-first.
 - `npm run build` must pass before every commit.
-- Keep components small; no state libraries — React state + URL state only.
+- Keep components small; no state libraries — React state + URL state (+ localStorage receipts) only.

@@ -1,9 +1,44 @@
-# Slip — Verified Build Plan & Decisions (batch-first)
+# Slip — Build Plan & Decisions (batch-first)
 
-> Status: **architecture fully verified, all decisions locked, zero structural blockers.**
-> Updated: 2026-06-13. Single source of truth for the real-integration build. Where it
-> conflicts with `docs/research/*` or the PRD, **this doc wins** — it folds in seven deep
-> verification passes against live APIs, on-chain probes, and the published SDK types.
+> Status: **shipped and running on Arc testnet — real-only money path.** Updated: 2026-06-14.
+> Where this doc conflicts with `docs/research/*` or the PRD, **this doc wins.**
+> §§0–9 below are the design rationale (mostly intact); the **As-built** block here is the
+> authoritative description of what actually runs.
+
+## As-built (current implementation)
+
+The send pipeline is split into **two independently-retriable legs** (so a failure in one
+never wedges the other), surfaced as the two-step `/send` screen:
+
+- **`runBridge`** (engine/bridge.ts) — CCTP aggregation. The connected Dynamic wallet
+  **signs the burn** of Σ USDC on its origin chain (Base Sepolia, etc.); Circle's forwarder
+  mints Σ on Arc. No server CCTP key — it is wallet-signed client-side (`CCTP_PRIVATE_KEY`
+  is legacy/unused).
+- **`runDistribute`** (engine/distribute.ts) — over funds already on Arc: **shield Σ once**
+  via a **wallet-funded `depositWithApproval`** (NOT the faucet — the connected wallet signs
+  the ERC-20 approve + deposit on Arc), then **N sequential private `transfer()`s** to each
+  recipient's claim account, then N claim links. `runBatchSend`/`runSend` = `runBridge` then
+  `runDistribute`.
+
+App IA: `/` Home (wallet + USDC across all chains), `/send` (the two steps), `/settings`
+(switch active network Base Sepolia↔Arc + per-chain balances), `/claim` (OTP → withdraw),
+plus `/batch` `/private` `/architecture`.
+
+Hard properties that shipped:
+- **Real-only.** No demo/sim, no `isDemoMode`, `getShieldOps()` always returns the real ops.
+  Every failure is an honest throw shown in the UI; nothing reports success without funds moving.
+- **Privacy is the only send path.** If the shield/transfer fails, the send emits a FAILED step
+  and throws — there is **no** degraded public direct-settle (it was removed because it
+  stranded funds at a keyless address the claim can't reach). No claim link without a real
+  shielded transfer. (`engine/settle.ts` deleted.)
+- **Recipient registration before transfer.** The recipient's Unlink claim account is
+  `ensureRegistered()`-ed at send time (from the claimSecret) before the sender transfers to
+  it — otherwise the relayer rejects with `transfer.prepare failed: user not found`.
+- **FX at claim = USDC today.** Non-EU → USDC (the withdrawn coin). EU → attempt Circle Swap
+  Kit USDC→EURC, but there is no USDC↔EURC route on Arc testnet, so it honestly falls back to
+  USDC. No fabricated rate. StableFX is dropped.
+
+---
 
 ---
 
@@ -45,10 +80,11 @@ requirement — see decision #9. None of the above depend on it.
 5. **Privacy = browser Unlink client + thin server routes.** `createUnlinkClient` +
    `account.fromSeed` run in the browser (secret/keys never leave the client); only
    `register` + `authorization-token` are server routes holding `UNLINK_API_KEY`.
-6. **Shield = `faucet.requestPrivateTokens({ amount: ΣWei })`** (gasless, walletless) when
-   Σ ≤ the faucet cap; else split into ⌈Σ/cap⌉ calls, or fall back to
-   `depositWithApproval` (needs a gas-funded sender EOA — acceptable; see §1 walletless
-   note). Shield **Σ once** into the sender's account.
+6. **Shield = `depositWithApproval({ token, amount: ΣWei, evm })`** — the connected wallet
+   signs the ERC-20 approve + deposit of the bridged USDC on Arc, shielding **Σ once** into
+   the sender's Unlink account. (As-built choice: wallet-funded, not the faucet — the sender
+   already holds the bridged USDC on Arc and connects a wallet to fund the batch, natural for
+   a payroll payer.)
 7. **Fan-out = N SEQUENTIAL `transfer()` calls** (≤2 recipients each). The batch form
    caps at `MAX_TRANSFER_RECIPIENTS = 2` (`spend_10x4_v1` circuit) — there is NO single
    N-recipient transfer. Loop N (or ⌈N/2⌉ paired) heavy proving ops; honor `Retry-After`
@@ -109,10 +145,10 @@ EMPLOYER / SENDER (browser, Dynamic wallet)        SERVER routes (secrets)      
    - attestation + mint Σ on Arc ──────────────────────────────────────────────────▶ Circle Orbit forwarder
                                                                                        gas: relayer; fee netted
 5. per recipient: generate claim secret (CSPRNG) [client] — secrets NEVER leave browser
-6. shield Σ once: client.faucet.requestPrivateTokens({token, amount: ΣWei}) [client]
+6. shield Σ once: client.depositWithApproval({token, amount: ΣWei, evm}) [client, wallet-signed on Arc]
         register/authorize ─────────────────────▶ /api/unlink/register, /authorization-token (admin key)
-        (if Σ > faucet cap: split, or depositWithApproval)            gas: none (faucet) / sender USDC (deposit)
-7. fan-out: for r in recipients → client.transfer({recipientAddress: r.claimUnlinkAddr, amount: r.amtWei})
+                                                                     gas: sender USDC (Arc native gas)
+7. fan-out: for r in recipients → register r's claim acct, then client.transfer({recipientAddress, amount})
    [client→relayer]  N SEQUENTIAL proofs (≤2 recipients/call)        gas: relayer (per transfer)
 8. build N links /claim#base64url({v:2, secret, amountUsdc, pregenAddress, region, senderLabel, ...})  [client]
    distribute one link per recipient
@@ -123,8 +159,8 @@ EACH RECIPIENT (browser)
 11. withdraw: client.withdraw({recipientEvmAddress: pregenAddress, token, amount}) [client→relayer]
         re-derive claim acct = account.fromSeed({seed: keccak(secret), accountIndex})
                                                                      gas: relayer (recipient pays nothing)
-12. Local coin: EU → withdraw EURC, else USDC (destination-token choice, no swap).
-        Optional stretch: real USDC→EURC via Swap Kit. On the recipient's OWN funds — public.
+12. Local coin: withdraw delivers USDC. EU → attempt USDC→EURC via Swap Kit (no route on Arc
+        testnet → honest USDC fallback). On the recipient's OWN funds — public. USDC today.
 13. done — recipient holds local stablecoin in a wallet they own
 ```
 
@@ -155,14 +191,17 @@ const client = createUnlinkClient({
 });
 await client.ensureRegistered();
 
-// SHIELD Σ once (gasless). On cap rejection: split calls, or depositWithApproval fallback.
-await client.faucet.requestPrivateTokens({ token: USDC, amount: sumWei });
+// SHIELD Σ once — wallet-funded deposit of the bridged USDC (connected wallet signs on Arc).
+await (await client.depositWithApproval({
+  token: USDC, amount: sumWei, evm: evm.fromViem({ walletClient, publicClient }),
+})).wait();
 
 // FAN-OUT: N sequential single-recipient transfers (batch form caps at 2 recipients).
 for (const r of recipients) {
-  const claimAddr = await account
-    .fromSeed({ seed: keccakBytes(r.secret), accountIndex: 1 })
-    .getAddress();
+  // REGISTER the recipient's claim account first (else "transfer.prepare failed: user not
+  // found"). We hold r.secret (it rides in the claim link); building its client registers it.
+  await buildClient(r.secret); // ensureRegistered() inside
+  const claimAddr = await account.fromSeed({ seed: keccakBytes(r.secret) }).getAddress();
   const res = await (await client.transfer({
     recipientAddress: claimAddr, token: USDC, amount: r.amountWei,
   })).wait();
@@ -322,8 +361,17 @@ isolated). `ClaimScreen.tsx` OTP-login gate → withdraw.
 7. **`npm install` transitive viem pin** (top-level peers clean; `--legacy-peer-deps` only
    if ERESOLVE).
 
-## 9. Remaining blockers
+## 9. Remaining blockers / known limits (as-built)
 
-**None.** With StableFX dropped, there are no human-gated dependencies left — every
-credential is self-serve, and local-currency delivery (EURC direct) needs no FX key at all.
-Everything on the critical path is verified.
+- **No design blockers.** Every credential is self-serve. The real money path is shipped:
+  CCTP bridge → wallet-funded shield → private fan-out → relayer withdraw.
+- **EURC at claim is not deliverable on Arc testnet** — Circle Swap Kit has no USDC↔EURC
+  route there, so the EU path honestly falls back to USDC. Everyone receives USDC today. (A
+  real EURC leg would need a live swap route or shielding EURC directly — out of scope.)
+- **Claim-link email needs a verified Resend domain.** `EMAIL_FROM` must be an address on a
+  domain verified in Resend to reach arbitrary recipients; the sandbox sender only delivers
+  to the account owner's email.
+- **Sender gas:** the sender needs origin-chain native gas (e.g. Base Sepolia ETH) to sign
+  the CCTP burn, plus USDC. Recipients need nothing.
+- **First-run reality:** the real Unlink browser path (deposit/transfer/withdraw) surfaces
+  any runtime issue as a visible error rather than a fake success — by design.

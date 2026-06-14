@@ -9,32 +9,39 @@ hot-spot file (coordinate / single owner).
 
 ---
 
-## Status (updated 2026-06-13)
+## Status (updated 2026-06-14) — shipped, real-only
 
 **Bounty target:** primary = Arc **"Chain-Abstracted USDC / Arc as Liquidity Hub" ($3,500)**
 (our CCTP bridge = multi-chain → one Arc liquidity surface); secondary = Arc **"Advanced
-Stablecoin Logic"** (programmable payroll); plus Dynamic + Unlink sponsor bounties. See
-`docs/PLAN.md` "Bounty targeting".
+Stablecoin Logic"** (programmable payroll); plus Dynamic + Unlink sponsor bounties.
 
-**Done & on `main`:** Wave 0 · A1 (pregen) · Track B (Unlink browser rewrite + auth routes,
-PR #3) · Track C (CCTP) · Track E (batch fan-out, PR #3) + batch surface wired to
-`runBatchSend` (PR #4) · Track F (batch + claim OTP + proof views, PR #2) · design + Railway
-config. **Full real flow runs end-to-end (single + 6-row batch, single Σ-shield, no
-cross-leakage).** Note: D1 StableFX shipped but is now being **REMOVED** (see below).
+**Shipped & on `main`:** the full real money path — Dynamic pregen, CCTP aggregation
+(wallet-signed burn → forwarder mint), Unlink wallet-funded shield + private fan-out + relayer
+withdraw, OTP claim, batch + proof views, Resend claim-link email, Railway auto-deploy.
 
-**FX change:** **StableFX is DROPPED** (contact-a-rep key; no bounty needs it). Local currency
-is now a destination-token choice — EU → **EURC** (faucet-fundable), else **USDC** — delivered
-directly, no swap, no key. Optional stretch: real USDC→EURC via Swap Kit (free self-serve key).
+**App restructure (PR #20):** split the monolithic send into two independently-retriable
+legs — `runBridge` + `runDistribute` — surfaced as the two-step `/send`. New IA: `/` Home
+(multi-chain USDC balances), `/send`, `/settings` (network switch), `/claim`. Fixed the
+post-bridge Arc balance refresh so step ② un-gates.
 
-**Remaining:** **D-fix** (remove `fx-stablefx.ts`; `fxAtClaim` → token-selector) · **A2**
-(real-mode sender login/balance — minor) · optional Swap Kit stretch · **Wave 2** (gather keys
-→ wire keys → one live testnet batch → deploy + domain).
+**Real-only lock-in (PR #21):** removed ALL stubs/simulation. Root cause of "funds didn't
+move": `getShieldOps()` ran client-side but gated on the server-only `UNLINK_API_KEY`
+(undefined in the browser) → always picked the sim. Fix: `getShieldOps()` is always real (the
+server routes 501 are the honest gate). Deleted `demo/sim.ts`, `isDemoMode`, `demoShieldOps`;
+deleted `engine/settle.ts` and the degraded direct-settle fallback (it stranded funds);
+`claim.ts`/`distribute.ts`/`fx.ts` are real-only with honest throws.
 
-**Deploy:** Railway is set up + auto-deploys on push to `main`. Earlier deploys failed on a
-stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys clean; then
-`railway domain` for a public URL.
+**Recipient registration fix (PR #22):** register each recipient's Unlink claim account at
+send time before transferring (else `transfer.prepare failed: user not found`).
 
-**Deviation:** config uses `CIRCLE_STABLEFX_API_KEY` (not `STABLEFX_API_KEY`).
+**FX:** **StableFX dropped.** FX at claim = USDC for everyone today — EU→EURC is attempted via
+Circle Swap Kit but there is **no USDC↔EURC route on Arc testnet**, so it honestly falls back
+to USDC. No fabricated rate. (`fx-stablefx.ts` gone; `swap.ts` is the optional Swap Kit path.)
+
+**Deploy:** Railway auto-deploys on push to `main`.
+
+**Known limits:** EURC undeliverable on Arc testnet (USDC fallback); claim-link email needs a
+verified Resend `EMAIL_FROM` domain; sender needs origin-chain gas for the burn.
 
 ---
 
@@ -69,7 +76,9 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 ### Track A — Identity (Dynamic)
 - [x] **A1 — Pregen adapter** 🔑(`DYNAMIC_API_TOKEN`): real `waas/create` + lookup behind
   `/api/pregen`. *Files:* `src/lib/adapters/pregen.ts`, `api/pregen/route.ts`.
-- [ ] **A2 — Sender login/balance** in real mode. *Files:* `src/components/WalletProvider.tsx`.
+- [x] **A2 — Sender login/balance** (real): Dynamic embedded wallet; `WalletProvider` exposes
+  multi-chain `balances`, `chainId`, `switchNetwork`, `getWalletClient`, `refreshBalances`.
+  *Files:* `src/components/WalletProvider.tsx`.
 - [x] **A3 — Claim OTP login + "claim your wallet" UI.** *Files:* `src/components/ClaimScreen.tsx`.
 
 ### Track B — Privacy (Unlink) — hardest; give to strongest
@@ -83,19 +92,17 @@ stale lockfile; that's fixed (`npm ci` + build green on HEAD). Next push deploys
 - [x] **C1 — Bridge adapter** 🔑(`CCTP_PRIVATE_KEY` for live): `bridge-kit`, bridge **Σ once**
   (Base Sepolia → Arc, forwarder). *Files:* `src/lib/adapters/bridge.ts`;
   add CCTP addrs + chain ids to `src/lib/adapters/arc.ts`.
-- [x] **C2 — Wire bridge into engine:** bridge before shield, await mint, keep gas buffer.
-  *Files:* `src/lib/engine/aggregate.ts`, `src/lib/engine/shield.ts`.
+- [x] **C2 — Wire bridge into engine:** `runBridge` (engine/bridge.ts) burns Σ on the origin
+  chain (wallet-signed) + awaits the forwarder mint on Arc, then `runDistribute` shields.
+  *Files:* `src/lib/engine/bridge.ts`, `src/lib/engine/distribute.ts`, `src/lib/engine/aggregate.ts`.
 
-### Track D — Local currency at claim (StableFX DROPPED)
-- [x] ~~**D1 — StableFX adapter**~~ — shipped, now **being removed** (contact-a-rep key; no
-  bounty needs it). See D-fix.
-- [ ] **D-fix — Remove StableFX, deliver coin directly:** delete `src/lib/adapters/fx-stablefx.ts`
-  + the StableFX path in `api/fx/route.ts`; make `fxAtClaim` a token-selector (EU → EURC,
-  else USDC — EURC is faucet-fundable, no swap, no key). *Files:* `src/lib/engine/fx.ts`,
-  `src/lib/adapters/fx-stablefx.ts` (delete), `src/app/api/fx/route.ts`.
-- [ ] **D2 — (OPTIONAL stretch) Swap Kit** 🔑(`CIRCLE_KIT_KEY`, free self-serve): real
-  on-chain USDC→EURC; confirm one live swap. *Files:* `src/lib/adapters/swap.ts`. Only if we
-  want a live FX leg on top of direct delivery.
+### Track D — Local currency at claim (StableFX DROPPED) — done
+- [x] ~~**D1 — StableFX adapter**~~ — REMOVED (`fx-stablefx.ts` deleted; contact-a-rep key, no bounty needs it).
+- [x] **D-fix — `fxAtClaim` is real-only:** non-EU → USDC no-op; EU → `/api/fx` → Swap Kit.
+  *Files:* `src/lib/engine/fx.ts`, `src/app/api/fx/route.ts`.
+- [x] **D2 — Swap Kit wired** 🔑(`CIRCLE_KIT_KEY`, optional): `swap.ts` runs the real
+  USDC→EURC swap server-side. **No route exists on Arc testnet**, so it honestly falls back to
+  USDC — every recipient gets USDC today. *Files:* `src/lib/adapters/swap.ts`.
 
 ### Track E — Engine orchestration 🔥 — develops against the adapter interfaces; not blocked on A–D landing
 - [x] **E1 — `runSend` batch loop:** loop resolve→pregen over `recipients[]`; bridge + shield
