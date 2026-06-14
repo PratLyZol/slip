@@ -15,6 +15,7 @@
 import Link from "next/link";
 import { useWallet } from "./WalletProvider";
 import { formatAmount } from "@/lib/format";
+import UnifyBalance from "./UnifyBalance";
 
 export default function HomeScreen() {
   const wallet = useWallet();
@@ -100,6 +101,14 @@ export default function HomeScreen() {
               </div>
             ))}
           </div>
+          <UnifyBalance />
+        </section>
+      )}
+
+      {/* When balances haven't loaded yet, still surface the bridge action. */}
+      {connected && wallet.balances.length === 0 && (
+        <section className="rise mt-7">
+          <UnifyBalance />
         </section>
       )}
 
