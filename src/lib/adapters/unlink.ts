@@ -246,6 +246,15 @@ const realShieldOps: ShieldOps = {
   },
 
   async privateTransfer(batchSecret, claimSecret, amountUsdc) {
+    // The recipient's claim account must be REGISTERED with Unlink BEFORE the
+    // sender can transfer to it — otherwise the relayer rejects with
+    // "transfer.prepare failed: user not found: unlink1…". The recipient only
+    // registers themselves at claim time (later), so we register their account
+    // now on their behalf: we hold the claimSecret (it rides in the claim link)
+    // and buildClient() runs ensureRegistered() for that derived account. This
+    // is idempotent — the recipient re-registers + withdraws when they claim.
+    await buildClient(claimSecret);
+
     const { client } = await buildClient(batchSecret);
     const recipientAddress = await this.claimAddress(claimSecret);
     const handle = await client.transfer({
