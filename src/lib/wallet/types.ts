@@ -10,8 +10,22 @@ export interface WalletState {
   address?: Address;
   /** The wallet's currently-connected EVM chain id (the CCTP burn origin). */
   chainId?: number;
-  /** USDC balance in human units, or null while loading. */
+  /** USDC balance in human units on the connected chain, or null while loading. */
   balanceUsdc: number | null;
+  /**
+   * Per-chain USDC balances (Base Sepolia + Arc Testnet), for the Settings
+   * screen. `usdc` is human units, or null if that chain's read failed/loading.
+   */
+  balances: { chainId: number; name: string; usdc: number | null }[];
+  /**
+   * Force an immediate re-read of `balanceUsdc` + `balances`, resolving once the
+   * reads land. Use after a money move that completes WITHOUT a network switch —
+   * e.g. SendScreen awaiting this (and polling) when step ① (bridge → Arc mint)
+   * finishes, so the step ② gate sees the fresh Arc balance right away instead
+   * of waiting for a chain switch to retrigger the read. Resolves immediately
+   * (no-op) when no wallet is connected.
+   */
+  refreshBalances: () => Promise<void>;
   /** Open the wallet connect flow. */
   login: () => void;
   /** Disconnect the wallet. */

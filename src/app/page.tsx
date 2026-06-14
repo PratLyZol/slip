@@ -1,5 +1,5 @@
-import SendScreen from "@/components/SendScreen";
+import HomeScreen from "@/components/HomeScreen";
 
 export default function Home() {
-  return <SendScreen />;
+  return <HomeScreen />;
 }

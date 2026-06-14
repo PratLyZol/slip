@@ -15,7 +15,14 @@
 
 import type { Address } from "viem";
 import type { BridgeChainIdentifier } from "@circle-fin/bridge-kit";
-import { BASE_SEPOLIA_RPC_URL, BASE_SEPOLIA_USDC_ADDRESS } from "./arc";
+import {
+  ARC_CHAIN_ID,
+  ARC_RPC_URL,
+  BASE_SEPOLIA_CHAIN_ID,
+  BASE_SEPOLIA_RPC_URL,
+  BASE_SEPOLIA_USDC_ADDRESS,
+  USDC_ADDRESS as ARC_USDC_ADDRESS,
+} from "./arc";
 
 export interface CctpSourceChain {
   /** Numeric EVM chain id (what wallet.getNetwork() returns). */
@@ -74,6 +81,49 @@ export const CCTP_SOURCE_CHAINS: CctpSourceChain[] = [
     rpc: "https://rpc-amoy.polygon.technology",
   },
 ];
+
+/**
+ * Chains whose USDC balance the wallet UI reads — distinct from {@link
+ * CCTP_SOURCE_CHAINS}.
+ *
+ * IMPORTANT: Arc is a CCTP *destination*, never a burn source. It lives here
+ * (so the wallet can show its Arc USDC and switch onto it) but is deliberately
+ * kept OUT of the CCTP source registry — adding it there would let the engine
+ * try to burn from Arc. The two lists must stay separate.
+ */
+export interface BalanceChain {
+  /** Numeric EVM chain id. */
+  chainId: number;
+  /** Human label for the UI. */
+  name: string;
+  /** USDC token on this chain (6 decimals). */
+  usdc: Address;
+  /** Public RPC for reading balances on this chain. */
+  rpc: string;
+}
+
+export const BALANCE_CHAINS: BalanceChain[] = [
+  {
+    chainId: BASE_SEPOLIA_CHAIN_ID,
+    name: "Base Sepolia",
+    usdc: BASE_SEPOLIA_USDC_ADDRESS,
+    rpc: BASE_SEPOLIA_RPC_URL,
+  },
+  {
+    chainId: ARC_CHAIN_ID,
+    name: "Arc Testnet",
+    usdc: ARC_USDC_ADDRESS,
+    rpc: ARC_RPC_URL,
+  },
+];
+
+/** A balance-readable chain by numeric id, or undefined if not listed. */
+export function balanceChainByChainId(
+  chainId?: number,
+): BalanceChain | undefined {
+  if (chainId == null) return undefined;
+  return BALANCE_CHAINS.find((c) => c.chainId === chainId);
+}
 
 /** The CCTP source chain for a numeric chain id, or undefined if unsupported. */
 export function cctpSourceByChainId(
