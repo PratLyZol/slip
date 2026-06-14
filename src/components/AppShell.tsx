@@ -21,11 +21,13 @@ const WalletConnect = dynamic(() => import("./WalletConnect"), {
   ),
 });
 
+// Primary nav: Home, Send, Claim, Settings. /batch, /private, /architecture
+// remain routable but are dropped from the primary tab bar.
 const NAV = [
-  { href: "/", label: "Send", icon: SendIcon },
-  { href: "/batch", label: "Batch", icon: BatchIcon },
-  { href: "/private", label: "Private", icon: ShieldIcon },
-  { href: "/architecture", label: "How", icon: LayersIcon },
+  { href: "/", label: "Home", icon: HomeIcon },
+  { href: "/send", label: "Send", icon: SendIcon },
+  { href: "/claim", label: "Claim", icon: ClaimIcon },
+  { href: "/settings", label: "Settings", icon: GearIcon },
 ] as const;
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -106,44 +108,47 @@ function SendIcon({ active }: IconProps) {
     </svg>
   );
 }
-function BatchIcon({ active }: IconProps) {
+function HomeIcon({ active }: IconProps) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <path
-        d="M4 6h16M4 12h16M4 18h10"
+        d="M4 11 12 4l8 7M6 9.5V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9.5"
         stroke={stroke(active)}
         strokeWidth="1.7"
+        strokeLinejoin="round"
         strokeLinecap="round"
       />
     </svg>
   );
 }
-function ShieldIcon({ active }: IconProps) {
+function ClaimIcon({ active }: IconProps) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <path
-        d="M12 3 5 6v5c0 4 3 6.5 7 8 4-1.5 7-4 7-8V6l-7-3Z"
+        d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h4"
         stroke={stroke(active)}
         strokeWidth="1.7"
         strokeLinejoin="round"
+      />
+      <path
+        d="M9 4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5v1A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-1ZM8.5 12.5l2.5 2.5 4.5-5"
+        stroke={stroke(active)}
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+        strokeLinecap="round"
       />
     </svg>
   );
 }
-function LayersIcon({ active }: IconProps) {
+function GearIcon({ active }: IconProps) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="3" stroke={stroke(active)} strokeWidth="1.7" />
       <path
-        d="m12 3 9 5-9 5-9-5 9-5Z"
+        d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3"
         stroke={stroke(active)}
         strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m3 12 9 5 9-5"
-        stroke={stroke(active)}
-        strokeWidth="1.7"
-        strokeLinejoin="round"
+        strokeLinecap="round"
       />
     </svg>
   );

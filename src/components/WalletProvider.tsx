@@ -19,7 +19,11 @@ import {
 } from "@dynamic-labs/sdk-react-core";
 import { isEthereumWallet } from "@dynamic-labs/ethereum";
 import { DYNAMIC_ENV_ID } from "@/lib/config";
-import { getUsdcBalance } from "@/lib/adapters/balance";
+import {
+  getUsdcBalance,
+  getAllUsdcBalances,
+  type ChainUsdcBalance,
+} from "@/lib/adapters/balance";
 import { shortAddress } from "@/lib/format";
 import type { WalletState } from "@/lib/wallet/types";
 
@@ -57,6 +61,8 @@ function DisconnectedWalletProvider({
     address: undefined,
     chainId: undefined,
     balanceUsdc: null,
+    balances: [],
+    refreshBalances: async () => {},
     login: () => {},
     logout: () => {},
     getNetwork: async () => undefined,
@@ -75,7 +81,28 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
   const primaryWallet = wallets[0];
   const address = primaryWallet?.address as Address | undefined;
   const [balanceUsdc, setBalanceUsdc] = useState<number | null>(null);
+  const [balances, setBalances] = useState<ChainUsdcBalance[]>([]);
   const [chainId, setChainId] = useState<number | undefined>(undefined);
+
+  /**
+   * Re-read both the single-chain balance and the per-chain balances NOW,
+   * resolving once both land. Used after a money move that doesn't switch the
+   * wallet's network (e.g. step ①'s bridge → Arc mint, where the wallet stays on
+   * the origin chain) — the [address, chainId] effects below wouldn't re-fire,
+   * so callers (SendScreen) await this, polling until the Arc row goes positive.
+   * Reads are independent: one failing doesn't reject the whole refresh.
+   */
+  const refreshBalances = useCallback(async (): Promise<void> => {
+    if (!address) return;
+    await Promise.all([
+      getUsdcBalance(address, chainId)
+        .then(setBalanceUsdc)
+        .catch(() => setBalanceUsdc(null)),
+      getAllUsdcBalances(address)
+        .then(setBalances)
+        .catch(() => setBalances([])),
+    ]);
+  }, [address, chainId]);
 
   // Read the wallet's current network (no switch). Stable identity for callers.
   const getNetwork = useCallback(async (): Promise<number | undefined> => {
@@ -114,7 +141,10 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
 
   // Read USDC on the connected ORIGIN chain (re-reads when the chain switches).
   useEffect(() => {
-    if (!address) return;
+    if (!address) {
+      setBalanceUsdc(null);
+      return;
+    }
     let cancelled = false;
     getUsdcBalance(address, chainId)
       .then((b) => {
@@ -122,6 +152,28 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         if (!cancelled) setBalanceUsdc(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, chainId]);
+
+  // Read USDC across every balance chain (Base Sepolia + Arc) for Settings.
+  // Re-reads on address change and after a network switch (chainId). Money moves
+  // that DON'T switch the network (e.g. step ①'s Arc mint) refresh via the
+  // explicit refreshBalances() callback instead.
+  useEffect(() => {
+    if (!address) {
+      setBalances([]);
+      return;
+    }
+    let cancelled = false;
+    getAllUsdcBalances(address)
+      .then((rows) => {
+        if (!cancelled) setBalances(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setBalances([]);
       });
     return () => {
       cancelled = true;
@@ -140,12 +192,19 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
    * chain first — otherwise the Arc deposit (5042002) and the Base Sepolia CCTP
    * burn (84532) would both sign on whichever chain happens to be active.
    * `switchNetwork` lives on the wallet and takes the numeric chain id.
+   *
+   * The switch is a side effect that leaves the wallet on `chainId` once this
+   * returns, so we mirror it into provider state — otherwise `chainId` would lag
+   * the wallet's real active network after an engine call (burn on 84532 →
+   * deposit on Arc), and the Settings "active network" + send gate would read
+   * stale. setChainId is a stable setter; it doesn't widen the dep list.
    */
   const getWalletClient = useCallback(
     async (chainId: string): Promise<WalletClient | undefined> => {
       if (!primaryWallet) return undefined;
       if (!isEthereumWallet(primaryWallet)) return undefined;
       await primaryWallet.switchNetwork(Number(chainId));
+      setChainId(Number(chainId));
       return primaryWallet.getWalletClient(chainId) as Promise<WalletClient | undefined>;
     },
     [primaryWallet],
@@ -157,6 +216,8 @@ function DynamicWalletProvider({ children }: { children: React.ReactNode }) {
     address,
     chainId,
     balanceUsdc,
+    balances,
+    refreshBalances,
     login: () => setShowAuthFlow(true),
     logout: () => handleLogOut(),
     getNetwork,

@@ -76,6 +76,72 @@ export interface SendRequest {
   getWalletClient?: (chainId: string) => Promise<WalletClient | undefined>;
 }
 
+/**
+ * Request for the BRIDGE leg (CCTP aggregation) — {@link runBridge}.
+ *
+ * The bridge is independently retriable: it burns Σ on the wallet's connected
+ * ORIGIN chain and mints it onto Arc, ONCE. It carries no recipient/claim
+ * concern — only "how much, from where, signed by which wallet".
+ */
+export interface BridgeRequest {
+  /** Σ amount in USD (== USDC) to bridge onto Arc, human units. */
+  amountUsd: number;
+  /** Connected sender wallet address — the Arc address the bridged USDC mints to. */
+  senderAddress?: Address;
+  /**
+   * The wallet's connected ORIGIN chain id — the chain the CCTP burn is signed
+   * on and the wallet's USDC is read from. Must be a CCTP-supported source (see
+   * adapters/cctp-chains); the UI gates on this and the engine validates it.
+   */
+  originChainId?: number;
+  /**
+   * Obtain a viem WalletClient for the given chainId (decimal string) from the
+   * connected Dynamic wallet. The bridge resolves the origin-chain client to
+   * sign the wallet-funded CCTP burn. Absent when no wallet is connected (the
+   * bridge then surfaces an honest error — never simulates).
+   */
+  getWalletClient?: (chainId: string) => Promise<WalletClient | undefined>;
+}
+
+/** Terminal result of the BRIDGE leg — {@link runBridge}. The two public edges. */
+export interface BridgeResult {
+  /** The CCTP burn on the origin chain (source side). */
+  burnTx: TxRef;
+  /** The CCTP mint on Arc (destination side, forwarder-relayed). */
+  mintTx: TxRef;
+  /** Σ amount bridged, human units as a string (e.g. "50.00"). */
+  amountUsdc: string;
+  /** The Arc address the bridged USDC minted to (the sender's Arc EOA). */
+  arcAddress: Address;
+}
+
+/**
+ * Request for the DISTRIBUTE leg — {@link runDistribute}. Resolve + shield +
+ * settle + claim links, operating on funds ALREADY on Arc.
+ *
+ * CRITICAL (the whole point of the split): distribute does NOT bridge and does
+ * NOT depend on {@link runBridge} having run in the same JS call. It reads the
+ * connected wallet's Arc USDC fresh and shields it. The Arc network switch
+ * (getWalletClient("5042002")) happens INSIDE the shield step.
+ *
+ * Same shape as {@link SendRequest} minus the bridge concern (no originChainId —
+ * the wallet is switched to Arc internally).
+ */
+export interface DistributeRequest {
+  /** Recipients to pay; single-send = exactly one. */
+  recipients: Recipient[];
+  /** Optional sender display label embedded in each claim link. */
+  senderName?: string;
+  /** Connected sender wallet address — whose Arc shielded balance funds the fan-out. */
+  senderAddress?: Address;
+  /**
+   * Obtain a viem WalletClient for the given chainId (decimal string) from the
+   * connected Dynamic wallet. The shield step resolves the Arc (5042002) client
+   * to sign the wallet-funded deposit. Absent when no wallet is connected.
+   */
+  getWalletClient?: (chainId: string) => Promise<WalletClient | undefined>;
+}
+
 /** The seven steps of a send (PRD §2). Ordered. */
 export enum EngineStep {
   Resolve = "resolve",
