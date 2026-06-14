@@ -7,6 +7,11 @@
  * Dynamic is mounted whenever NEXT_PUBLIC_DYNAMIC_ENV_ID is present (see
  * Providers); when it isn't, we render a disabled fallback instead of calling
  * Dynamic hooks.
+ *
+ * The balance shown in the pill is the CROSS-CHAIN USDC total (Σ over every
+ * chain), read from the SAME `wallet.balances` state HomeScreen's hero uses — so
+ * the pill number is byte-for-byte identical to the home headline (single source
+ * of truth; no second fetch here).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +22,7 @@ import {
   useUserWallets,
 } from "@dynamic-labs/sdk-react-core";
 import { DYNAMIC_ENV_ID } from "@/lib/config";
-import { getUsdcBalance } from "@/lib/adapters/balance";
+import { useWallet } from "./WalletProvider";
 import { formatAmount, shortAddress } from "@/lib/format";
 
 export default function WalletConnect() {
@@ -45,25 +50,17 @@ function DynamicConnect() {
   const isLoggedIn = useIsLoggedIn();
   const wallets = useUserWallets();
   const address = wallets[0]?.address as Address | undefined;
-  const [balanceUsdc, setBalanceUsdc] = useState<number | null>(null);
+  const wallet = useWallet();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!address) return;
-    let cancelled = false;
-    getUsdcBalance(address)
-      .then((b) => {
-        if (!cancelled) setBalanceUsdc(b);
-      })
-      .catch(() => {
-        if (!cancelled) setBalanceUsdc(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [address]);
+  // Σ USDC across every chain — derived from the SAME `wallet.balances` state the
+  // home hero reads, so the pill total matches it exactly. null entries (a chain
+  // still loading / read failed) count as 0; `anyLoaded` gates the "not loaded
+  // yet" UI (was the old `balanceUsdc === null` condition).
+  const totalUsdc = wallet.balances.reduce((sum, b) => sum + (b.usdc ?? 0), 0);
+  const anyLoaded = wallet.balances.some((b) => b.usdc !== null);
 
   // Close the details popover on outside-click / Escape.
   useEffect(() => {
@@ -121,12 +118,12 @@ function DynamicConnect() {
         </span>
         <div className="flex flex-col items-start leading-tight">
           <span className="text-[11px] font-medium text-text">
-            {balanceUsdc === null
+            {!anyLoaded
               ? shortAddress(address)
-              : `$${formatAmount(balanceUsdc)}`}
+              : `$${formatAmount(totalUsdc)}`}
           </span>
           <span className="text-[9px] uppercase tracking-wide text-text-faint">
-            {balanceUsdc === null ? "connected" : shortAddress(address)}
+            {!anyLoaded ? "connected" : shortAddress(address)}
           </span>
         </div>
       </button>
@@ -137,9 +134,9 @@ function DynamicConnect() {
           <p className="select-all break-all font-mono text-[12.5px] leading-relaxed text-text">
             {address}
           </p>
-          {balanceUsdc !== null && (
+          {anyLoaded && (
             <p className="mt-2 text-[11px] text-text-faint">
-              Balance ${formatAmount(balanceUsdc)} USDC
+              Balance ${formatAmount(totalUsdc)} USDC
             </p>
           )}
           <div className="mt-3 flex gap-2">
