@@ -1,9 +1,10 @@
 /**
- * Slip configuration + demo-mode gate.
+ * Slip configuration + real-adapter gates.
  *
- * Demo mode is FIRST-CLASS (see AGENTS.md). The whole product — send, claim, FX,
- * privacy proof, batch — must work with zero credentials. Real adapters only
- * activate when the relevant env keys are present.
+ * The app is REAL-ONLY (see AGENTS.md): there is no demo/simulation fallback.
+ * Each integration activates from its own env key/credential, and when a
+ * required key is absent the adapter surfaces an HONEST error rather than
+ * silently simulating. The gates below report which real paths are wired.
  */
 
 /** Dynamic environment id (public, safe in the client bundle). */
@@ -25,31 +26,19 @@ export const UNLINK_APP_ID = process.env.NEXT_PUBLIC_UNLINK_APP_ID ?? "slip";
 export const UNLINK_API_KEY = process.env.UNLINK_API_KEY;
 
 /**
- * True when the REAL Unlink privacy path is available: not in demo mode AND an
- * admin key is present. When false, demo mode simulates the shielded legs, or —
- * if real creds for OTHER adapters exist but Unlink's don't — the engine
- * degrades to direct settle with the shield marked "skipped (flag)".
+ * True when the REAL Unlink privacy path is available: an admin key is present.
+ * When false — if real creds for OTHER adapters exist but Unlink's don't — the
+ * engine degrades to direct settle with the shield marked "skipped (flag)".
  */
 export function isUnlinkConfigured(): boolean {
-  return !isDemoMode() && !!UNLINK_API_KEY;
-}
-
-/**
- * Demo mode has been REMOVED — the app is real-only. This always returns false
- * so every adapter takes its real path (real wallet, real CCTP bridge, real
- * Unlink/FX). Real integrations surface honest errors when their credentials are
- * absent rather than silently simulating. Kept as a single function so the (now
- * unreachable) sim branches still compile; they can be deleted as cleanup.
- */
-export function isDemoMode(): boolean {
-  return false;
+  return !!UNLINK_API_KEY;
 }
 
 /**
  * Dynamic server API token (server-only — NEVER bundled to the client). The
  * `dyn_…` token authorizes the backend pregen route (`waas/create`) and wallet
  * lookups. Without it the real recipient-address derivation has no Dynamic
- * backend to call, so pregen degrades to the deterministic demo address.
+ * backend to call, so the pregen route surfaces an honest error.
  */
 export const DYNAMIC_API_TOKEN = process.env.DYNAMIC_API_TOKEN;
 
@@ -64,7 +53,7 @@ export const DYNAMIC_API_TOKEN = process.env.DYNAMIC_API_TOKEN;
  * Circle StableFX API key (server-only — NEVER bundled to the client). Drives
  * the real USDC→EURC conversion at claim time via Circle StableFX on Arc.
  * Contact-a-rep (sales@circle.com), so it may be absent; when missing the FX
- * path falls back to Swap Kit, then to the deterministic sim.
+ * path falls back to Swap Kit.
  */
 export const CIRCLE_STABLEFX_API_KEY = process.env.CIRCLE_STABLEFX_API_KEY;
 
@@ -74,8 +63,7 @@ export const CIRCLE_STABLEFX_API_BASE =
 
 /**
  * Circle Kit key (server-only — NEVER bundled to the client). Powers the Swap
- * Kit fallback FX leg (real on-chain USDC→EURC). Absent, FX falls back to the
- * deterministic simulation.
+ * Kit fallback FX leg (real on-chain USDC→EURC).
  */
 export const CIRCLE_KIT_KEY = process.env.CIRCLE_KIT_KEY;
 
@@ -93,12 +81,12 @@ export const RESEND_API_KEY = process.env.RESEND_API_KEY;
 export const EMAIL_FROM = process.env.EMAIL_FROM ?? "Slip <onboarding@resend.dev>";
 
 /**
- * True when the REAL Dynamic pregen path is available: not in demo mode AND
- * both the public env id and the server token are present. When false, the
- * pregen route returns a deterministic demo address.
+ * True when the REAL Dynamic pregen path is available: both the public env id
+ * and the server token are present. When false, the pregen route surfaces an
+ * honest error rather than producing a keyless address.
  */
 export function isPregenConfigured(): boolean {
-  return !isDemoMode() && !!DYNAMIC_ENV_ID && !!DYNAMIC_API_TOKEN;
+  return !!DYNAMIC_ENV_ID && !!DYNAMIC_API_TOKEN;
 }
 
 /**
@@ -106,33 +94,32 @@ export function isPregenConfigured(): boolean {
  * is guaranteed to be a REAL, OTP-claimable wallet — i.e. when the real Dynamic
  * pregen path is configured ({@link isPregenConfigured}).
  *
- * When this is FALSE, the only payout address the pregen route can produce is
- * the deterministic `demoAddressFor(identifier)` — a KEYLESS address nobody
- * controls. Sending REAL shielded USDC there means the funds are lost forever.
- * The real Unlink unshield/withdraw MUST refuse unless this returns true (see
- * adapters/unlink.ts `unshield` + engine/claim.ts). This is the single source
- * of truth for "is it safe to send real funds to the recipient address?".
+ * When this is FALSE, the pregen route cannot produce a real, claimable payout
+ * address. Sending REAL shielded USDC to anything else means the funds are lost
+ * forever. The real Unlink unshield/withdraw MUST refuse unless this returns
+ * true (see adapters/unlink.ts `unshield` + engine/claim.ts). This is the
+ * single source of truth for "is it safe to send real funds to the recipient
+ * address?".
  *
  * It is deliberately INDEPENDENT of whether Unlink itself is configured: even a
- * fully-real Unlink withdraw must never fire to a keyless demo recipient.
+ * fully-real Unlink withdraw must never fire to a recipient with no claimable key.
  */
 export function isRealPayoutSafe(): boolean {
   return isPregenConfigured();
 }
 
 /**
- * True when the REAL StableFX path is available: not in demo mode AND a Circle
- * StableFX key is present. When false, FX cascades to Swap Kit then the sim.
+ * True when the REAL StableFX path is available: a Circle StableFX key is
+ * present. When false, FX cascades to Swap Kit.
  */
 export function isStableFxConfigured(): boolean {
-  return !isDemoMode() && !!CIRCLE_STABLEFX_API_KEY;
+  return !!CIRCLE_STABLEFX_API_KEY;
 }
 
 /**
- * True when the REAL Swap Kit fallback FX path is available: not in demo mode
- * AND a Circle Kit key is present. When false, FX falls back to the sim.
+ * True when the REAL Swap Kit fallback FX path is available: a Circle Kit key
+ * is present.
  */
 export function isSwapConfigured(): boolean {
-  return !isDemoMode() && !!CIRCLE_KIT_KEY;
+  return !!CIRCLE_KIT_KEY;
 }
-

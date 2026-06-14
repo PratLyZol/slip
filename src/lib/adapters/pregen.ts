@@ -8,13 +8,14 @@
  * Wraps the Dynamic `waas/create` REST endpoint behind the {@link PregenOps}
  * interface (engine/types.ts) so the engine never talks to Dynamic directly
  * (AGENTS.md: "SDK wiring lives ONLY in adapters"). No Dynamic SDK is added —
- * the call is a plain server-side `fetch` (no new dependency). Two impls:
+ * the call is a plain server-side `fetch` (no new dependency).
  *
- *  - DEMO ({@link demoPregenOps}): deterministic `demoAddressFor(identifier)`,
- *    credential-free, so the demo stays green with zero keys. `existed: false`.
- *  - REAL ({@link realPregenOps}): the live Dynamic `waas/create` call,
- *    authorized by the SERVER-ONLY `DYNAMIC_API_TOKEN`. SERVER-ONLY — the token
- *    is a secret and must never reach the browser (see `import "server-only"`).
+ * REAL-ONLY ({@link realPregenOps}): the live Dynamic `waas/create` call,
+ * authorized by the SERVER-ONLY `DYNAMIC_API_TOKEN`. SERVER-ONLY — the token is
+ * a secret and must never reach the browser (see `import "server-only"`). When
+ * the token is absent the adapter THROWS an honest error; it never fabricates a
+ * keyless demo address (real shielded funds must never be sent somewhere nobody
+ * controls — see the safety gate in adapters/unlink.ts `unshield`).
  *
  * `import "server-only"` poisons any client bundle that pulls this module in, so
  * the `dyn_…` token can never be statically reachable from the browser. The
@@ -24,31 +25,11 @@
 import "server-only";
 
 import { getAddress, type Address } from "viem";
-import {
-  DYNAMIC_API_TOKEN,
-  DYNAMIC_ENV_ID,
-  isPregenConfigured,
-} from "../config";
-import { demoAddressFor } from "../engine/resolve";
-import { simLatency, sleep } from "../demo/sim";
+import { DYNAMIC_API_TOKEN, DYNAMIC_ENV_ID } from "../config";
 import type { PregenOps } from "../engine/types";
 
 /** Dynamic WaaS pregen REST base — `{envId}/waas/create` is appended per call. */
 const DYNAMIC_API_BASE = "https://app.dynamic.xyz/api/v0/environments";
-
-// ---------------------------------------------------------------------------
-// DEMO implementation — deterministic, no credentials, no network.
-// ---------------------------------------------------------------------------
-
-const demoPregenOps: PregenOps = {
-  real: false,
-
-  async pregenAddress(identifier) {
-    // A touch of latency so the await reads as real work; deterministic address.
-    await sleep(simLatency(200, 500));
-    return { address: demoAddressFor(identifier), existed: false };
-  },
-};
 
 // ---------------------------------------------------------------------------
 // REAL implementation — Dynamic waas/create, server-only (DYNAMIC_API_TOKEN).
@@ -198,10 +179,10 @@ const realPregenOps: PregenOps = {
 };
 
 /**
- * Select the active PregenOps. Real Dynamic `waas/create` path when
- * {@link isPregenConfigured} (not demo mode AND both the env id and the server
- * token are present); otherwise the deterministic demo simulation.
+ * The active PregenOps — REAL-ONLY (Dynamic `waas/create`). There is no demo
+ * fallback: when `DYNAMIC_ENV_ID` / `DYNAMIC_API_TOKEN` are absent, the real op
+ * throws an honest error rather than returning a keyless address.
  */
 export function getPregenOps(): PregenOps {
-  return isPregenConfigured() ? realPregenOps : demoPregenOps;
+  return realPregenOps;
 }

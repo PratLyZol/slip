@@ -3,19 +3,34 @@
  *
  * Wraps `@unlink-xyz/sdk` behind a small {@link ShieldOps} interface so the rest
  * of the engine never imports the SDK directly (AGENTS.md: "SDK wiring lives
- * ONLY in adapters"). Two implementations conform to it:
+ * ONLY in adapters"). There is exactly ONE implementation — the REAL one. There
+ * is NO simulated fallback (AGENTS.md hard rule: "Real adapters are the only
+ * path"). When Unlink is not configured the adapter surfaces an HONEST error
+ * instead of fabricating a money movement.
  *
- *  - DEMO ({@link demoShieldOps}): deterministic simulation. Shield + unshield
- *    produce visible Arc-style tx hashes (the PUBLIC edges); the private
- *    transfer produces NO public artifact — only an opaque proof reference,
- *    modelling exactly what an explorer would show for an Unlink op (a ZK proof
- *    submission with no readable amount or parties).
  *  - REAL ({@link realShieldOps}): the NON-CUSTODIAL `@unlink-xyz/sdk/browser`
  *    client against `arc-testnet`. The account is DETERMINISTICALLY derived from
  *    a secret (secret → keccak seed → `account.fromSeed`), so the same shielded
  *    note is reachable from the same secret. The secret never leaves the client;
  *    only `register` + `authorization-token` are thin server routes holding the
  *    admin key. See PLAN.md §0.5 + §3 and docs/research/unlink.md.
+ *
+ * NO CLIENT-SIDE CONFIG GATE (the bug this file used to have): `getShieldOps()`
+ * runs in the BROWSER (distribute.ts / claim.ts are pulled in by "use client"
+ * screens). The Unlink admin key `UNLINK_API_KEY` is SERVER-ONLY — Next.js does
+ * NOT inline it into the client bundle, so `process.env.UNLINK_API_KEY` is
+ * ALWAYS `undefined` in the browser. Gating the real path on it (the old
+ * `isUnlinkConfigured()`) therefore ALWAYS fell through to the simulation, even
+ * with the key set in prod — the shield never debited and the claim withdrew
+ * nothing while the UI showed success.
+ *
+ * The fix is to ALWAYS take the real path and let the two server auth routes be
+ * the single source of truth: `/api/unlink/register` + `/api/unlink/
+ * authorization-token` already return an honest 501 when `UNLINK_API_KEY` is
+ * absent server-side, so `ensureRegistered()` (called in {@link buildClient})
+ * throws an honest error in that case. Key present → funds move; key absent →
+ * honest throw surfaces in the UI. ZERO new client config, and the server admin
+ * key stays the only configured-state authority (correct security model).
  *
  * Privacy architecture (batch-first, PLAN.md §2):
  *  - `seed = keccak(batchSecret)` derives the SENDER's Unlink account (index 0).
@@ -28,10 +43,10 @@
  *  - Claim = re-derive the claim account from its secret → `withdraw` to the
  *    recipient's public EOA (relayer-submitted, recipient pays no gas).
  *
- * The real path may fail without an admin key, or if the wallet rejects /
- * underfunds the deposit. Callers (engine) catch and degrade per PLAN.md — the
- * privacy leg must NEVER block the end-to-end demo. Demo mode runs with ZERO
- * credentials.
+ * The real path throws an HONEST error when the server admin key is absent (the
+ * auth routes 501 → `ensureRegistered()` throws), when no Arc wallet is
+ * connected, or when the wallet rejects / underfunds the deposit. It NEVER
+ * simulates a money movement.
  *
  * Unlink API notes (verified against the INSTALLED package @0.3.0-canary.598 —
  * see docs/research/unlink.md "Correction" + the browser/admin `.d.ts`):
@@ -53,26 +68,18 @@
 
 import { account, createUnlinkClient, evm } from "@unlink-xyz/sdk/browser";
 import { createPublicClient, http, keccak256, type Hex, type WalletClient } from "viem";
-import {
-  UNLINK_APP_ID,
-  UNLINK_API_KEY,
-  isDemoMode,
-  isUnlinkConfigured,
-  isRealPayoutSafe,
-} from "../config";
-import { simLatency, simTx, sleep, fakeTxHash } from "../demo/sim";
+import { UNLINK_APP_ID, isRealPayoutSafe } from "../config";
 import { UNLINK_ARC_ENVIRONMENT, USDC_ADDRESS, arcTestnet, txUrl } from "./arc";
 import type { PrivacyLeg } from "../engine/types";
 
 /**
- * The privacy interface the engine programs against. Both the real Unlink SDK
- * (browser client) and the demo simulation implement it. Amounts flow as human
- * `amountUsdc` strings; the adapter converts to wei internally. Accounts derive
- * deterministically from a secret so derivations are reproducible across the
- * send and claim sides.
+ * The privacy interface the engine programs against, backed ONLY by the real
+ * `@unlink-xyz/sdk/browser` client. Amounts flow as human `amountUsdc` strings;
+ * the adapter converts to wei internally. Accounts derive deterministically from
+ * a secret so derivations are reproducible across the send and claim sides.
  */
 export interface ShieldOps {
-  /** True when this is the real SDK path (vs. the demo simulation). */
+  /** Always `true` — there is only the real SDK path. Kept for the engine. */
   readonly real: boolean;
 
   /**
@@ -91,9 +98,8 @@ export interface ShieldOps {
    * Shield Σ (the batch total) once into the SENDER's Unlink balance via a
    * WALLET-FUNDED `depositWithApproval` of the bridged USDC. PUBLIC edge — a
    * real on-chain ERC-20 approve + deposit into the shielded pool, signed by the
-   * connected wallet (`walletClient`) on Arc. Returns the shield leg (with a
-   * real tx hash, unlike the old gasless faucet). The demo path ignores
-   * `walletClient`.
+   * connected wallet (`walletClient`) on Arc. Returns the shield leg with a real
+   * tx hash.
    */
   shieldSender(
     batchSecret: Hex,
@@ -143,87 +149,6 @@ export interface ShieldToken {
 export function usdcToken(amountHuman: string): ShieldToken {
   return { token: USDC_ADDRESS, amount: usdcToWei(amountHuman) };
 }
-
-// ---------------------------------------------------------------------------
-// DEMO implementation — deterministic, no credentials, no network.
-// ---------------------------------------------------------------------------
-
-/**
- * A believable bech32 `unlink1…` address derived from a secret + role salt.
- * Not a real Unlink address — purely for the demo story / proof view.
- */
-function demoUnlinkAddress(secret: Hex, role: string): string {
-  const h = keccak256(`0x${Buffer.from(`slip:unlink:${role}`).toString("hex")}${secret.slice(2)}` as Hex);
-  // bech32m charset (no 1/b/i/o); good enough to read as an unlink1 address.
-  const charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-  let body = "";
-  const bytes = h.slice(2);
-  for (let i = 0; i < 38; i++) {
-    const nibble = parseInt(bytes[i % bytes.length], 16);
-    body += charset[nibble % charset.length];
-  }
-  return `unlink1${body}`;
-}
-
-const demoShieldOps: ShieldOps = {
-  real: false,
-
-  async senderAddress(batchSecret) {
-    return demoUnlinkAddress(batchSecret, "sender");
-  },
-
-  async claimAddress(claimSecret) {
-    return demoUnlinkAddress(claimSecret, "claim");
-  },
-
-  async shieldSender(batchSecret, amountUsdc) {
-    // PUBLIC edge: a visible deposit of Σ into the shielded pool. The demo path
-    // needs no walletClient (third arg accepted to match the interface).
-    await sleep(simLatency(500, 1200));
-    const tx = simTx("unlink-shield", batchSecret, usdcToWei(amountUsdc));
-    return {
-      kind: "shield",
-      label: "Shield batch total into private pool",
-      public: true,
-      txHash: tx.hash,
-      explorerUrl: tx.explorerUrl,
-      simulated: true,
-    };
-  },
-
-  async privateTransfer(batchSecret, claimSecret) {
-    // THE private middle: a ZK proof submission. NO readable amount/parties and
-    // NO ordinary tx hash to link — only an opaque proof/nullifier reference,
-    // modelling what an explorer would actually show for an Unlink transfer.
-    await sleep(simLatency(700, 1600));
-    const proof = fakeTxHash("unlink-transfer-proof", batchSecret, claimSecret);
-    return {
-      kind: "transfer",
-      label: "Private transfer (shielded)",
-      public: false,
-      proofRef: proof,
-      simulated: true,
-    };
-  },
-
-  async unshield(claimSecret, recipientEvmAddress, amountUsdc) {
-    // PUBLIC edge: a visible withdraw tx to the recipient EOA.
-    const shieldedAddress = demoUnlinkAddress(claimSecret, "claim");
-    console.log(
-      `[slip] unshield (demo): shielded ${shieldedAddress} → ${recipientEvmAddress} (${amountUsdc} USDC)`,
-    );
-    await sleep(simLatency(500, 1200));
-    const tx = simTx("unlink-withdraw", claimSecret, recipientEvmAddress, usdcToWei(amountUsdc));
-    return {
-      kind: "unshield",
-      label: "Withdraw from shielded balance",
-      public: true,
-      txHash: tx.hash,
-      explorerUrl: tx.explorerUrl,
-      simulated: true,
-    };
-  },
-};
 
 // ---------------------------------------------------------------------------
 // REAL implementation — @unlink-xyz/sdk/browser against arc-testnet.
@@ -281,10 +206,10 @@ const realShieldOps: ShieldOps = {
     // SHIELD Σ once via a WALLET-FUNDED deposit of the bridged USDC. The
     // connected wallet (`walletClient`, on Arc 5042002) signs the ERC-20
     // approve + the deposit; Unlink's `depositWithApproval` chains them and
-    // returns a TransactionHandle. This is a REAL on-chain edge (unlike the old
-    // gasless faucet), so we get a real tx hash to surface on the public shield
-    // edge. The Unlink account itself is still derived from `batchSecret`
-    // (buildClient) — only the deposit FUNDING comes from the wallet.
+    // returns a TransactionHandle. This is a REAL on-chain edge, so we get a
+    // real tx hash to surface on the public shield edge. The Unlink account
+    // itself is still derived from `batchSecret` (buildClient) — only the
+    // deposit FUNDING comes from the wallet.
     if (!walletClient) {
       throw new Error(
         "[slip] No Arc wallet client for the Unlink deposit — connect a wallet before sending.",
@@ -345,21 +270,20 @@ const realShieldOps: ShieldOps = {
 
   async unshield(claimSecret, recipientEvmAddress, amountUsdc) {
     // ───────────────────────────────────────────────────────────────────────
-    // CRITICAL SAFETY GUARD (Task #2). This is the moment REAL shielded USDC
-    // leaves the private pool to a PUBLIC address. If the recipient address is
-    // not a verified-real, OTP-claimable Dynamic pregen wallet, it is the
+    // CRITICAL SAFETY GUARD. This is the moment REAL shielded USDC leaves the
+    // private pool to a PUBLIC address. If the recipient address is not a
+    // verified-real, OTP-claimable Dynamic pregen wallet, it is the
     // deterministic `demoAddressFor(identifier)` — a KEYLESS address nobody
-    // controls — and the funds would be LOST FOREVER. Refuse outright; the
-    // caller (engine/claim.ts) catches and degrades to a labeled simulation so
-    // the claim still completes without burning real money. NEVER weaken this
-    // to "best effort": a missing Dynamic pregen config means we CANNOT prove
-    // the recipient owns the address, so we must NOT send real funds there.
+    // controls — and the funds would be LOST FOREVER. Refuse outright by
+    // THROWING an honest error; the caller surfaces it (no silent simulation).
+    // NEVER weaken this to "best effort": a missing Dynamic pregen config means
+    // we CANNOT prove the recipient owns the address, so we must NOT send real
+    // funds there.
     if (!isRealPayoutSafe()) {
       throw new Error(
         "[slip] Refusing real Unlink withdraw: recipient payout address is not a " +
           "verified-real Dynamic pregen wallet (DYNAMIC_API_TOKEN absent → keyless " +
-          "demo address). Real funds must never go to a keyless address. " +
-          "Staying simulated.",
+          "demo address). Real funds must never go to a keyless address.",
       );
     }
     const { client, unlinkAddress } = await buildClient(claimSecret);
@@ -388,18 +312,19 @@ const realShieldOps: ShieldOps = {
 };
 
 /**
- * Select the active ShieldOps. Real path only when NOT in demo mode AND an
- * Unlink admin key is present; otherwise the deterministic demo simulation.
+ * The active ShieldOps — REAL-ONLY, ALWAYS. There is no simulated fallback and
+ * no client-side config gate (AGENTS.md: "Real adapters are the only path").
+ *
+ * Configured-state is owned ENTIRELY by the two server auth routes: when
+ * `UNLINK_API_KEY` is absent server-side they return an honest 501, so the very
+ * first mutating op (`ensureRegistered()` in {@link buildClient}) throws an
+ * honest error. We deliberately do NOT pre-check any browser env var — the
+ * server-only admin key would read as `undefined` in the client bundle, which is
+ * exactly the bug this replaced (see the file header).
  */
 export function getShieldOps(): ShieldOps {
-  if (isUnlinkConfigured()) return realShieldOps;
-  return demoShieldOps;
+  return realShieldOps;
 }
 
 /** Exposed for tests / the proof view header. */
 export const UNLINK_APP = UNLINK_APP_ID;
-
-/** True when the demo simulation is the active privacy path. */
-export function shieldIsSimulated(): boolean {
-  return isDemoMode() || !UNLINK_API_KEY;
-}

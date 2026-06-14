@@ -6,7 +6,7 @@
  * The secret lives in the URL fragment, which the server NEVER sees, so decode
  * happens client-side. Flow:
  *   ready    → big friendly amount + "Claim your money"
- *   login    → simulated email/SMS OTP gate ("confirm it's you") — folds in A3
+ *   login    → lightweight email/SMS OTP gate ("confirm it's you") — folds in A3
  *   claiming → live claim progress (ClaimSteps, streamed from runClaim)
  *   success  → "You received $X" + receipt + tx link
  *   claimed  → re-opening a claimed link shows the original receipt
@@ -14,7 +14,8 @@
  * Re-opening an already-claimed link short-circuits straight to the receipt —
  * the OTP gate only stands between a fresh "ready" link and the claim.
  *
- * Zero credentials in demo mode: no wallet UI, no seed phrase, no gas prompt.
+ * Walletless + gasless for the recipient: no wallet UI, no seed phrase, no gas
+ * prompt — the claim is relayer-submitted (recipient pays nothing).
  */
 
 import { useMemo, useState } from "react";
